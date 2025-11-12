@@ -24,7 +24,7 @@ Or build from source:
 ```bash
 git clone https://github.com/torosent/crankfire.git
 cd crankfire
-go build -o crankfire ./cmd/crankfire
+go build -o build/crankfire ./cmd/crankfire
 ```
 
 ## Quick Start
