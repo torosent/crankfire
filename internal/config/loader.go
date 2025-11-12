@@ -1,8 +1,10 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +16,8 @@ import (
 
 type Loader struct{}
 
+var ErrHelpRequested = errors.New("help requested")
+
 func NewLoader() *Loader {
 	return &Loader{}
 }
@@ -21,10 +25,20 @@ func NewLoader() *Loader {
 func (Loader) Load(args []string) (*Config, error) {
 	cmd := newFlagCommand()
 	if err := cmd.Flags().Parse(args); err != nil {
+		if errors.Is(err, pflag.ErrHelp) {
+			displayHelp(cmd)
+			return nil, ErrHelpRequested
+		}
 		return nil, err
 	}
 
 	flagSet := cmd.Flags()
+	if helpFlag := flagSet.Lookup("help"); helpFlag != nil {
+		if wantsHelp, err := strconv.ParseBool(helpFlag.Value.String()); err == nil && wantsHelp {
+			displayHelp(cmd)
+			return nil, ErrHelpRequested
+		}
+	}
 	configPath := flagSet.Lookup("config").Value.String()
 	cfgViper := viper.New()
 	if configPath != "" {
@@ -73,6 +87,7 @@ func newFlagCommand() *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 	}
+	cmd.SetOut(os.Stdout)
 	configureFlags(cmd.Flags())
 	return cmd
 }
@@ -83,15 +98,24 @@ func configureFlags(flags *pflag.FlagSet) {
 	flags.StringSlice("header", nil, "Additional request header in key=value form")
 	flags.String("body", "", "Inline request body payload")
 	flags.String("body-file", "", "Path to file containing the request body")
-	flags.Int("concurrency", 1, "Number of concurrent workers")
-	flags.Int("rate", 0, "Requests per second limit (0 means unlimited)")
-	flags.Duration("duration", 0, "How long to run the test (e.g. 30s, 1m)")
-	flags.Int("total", 0, "Total number of requests to send (0 means unlimited)")
+	flags.IntP("concurrency", "c", 1, "Number of concurrent workers")
+	flags.IntP("rate", "r", 0, "Requests per second limit (0 means unlimited)")
+	flags.DurationP("duration", "d", 0, "How long to run the test (e.g. 30s, 1m)")
+	flags.IntP("total", "t", 0, "Total number of requests to send (0 means unlimited)")
 	flags.Duration("timeout", 30*time.Second, "Per-request timeout")
 	flags.Int("retries", 0, "Number of retries per request")
 	flags.Bool("json-output", false, "Emit JSON formatted output")
 	flags.Bool("dashboard", false, "Show live terminal dashboard with metrics")
+	flags.Bool("log-errors", false, "Log each failed request to stderr")
 	flags.String("config", "", "Path to configuration file (JSON or YAML)")
+}
+
+func displayHelp(cmd *cobra.Command) {
+	out := cmd.OutOrStdout()
+	fmt.Fprintf(out, "Usage: %s\n\nFlags:\n", cmd.UseLine())
+	fs := cmd.Flags()
+	fs.SetOutput(out)
+	fs.PrintDefaults()
 }
 
 func applyConfigSettings(cfg *Config, settings map[string]interface{}) error {
@@ -210,6 +234,14 @@ func applyConfigSettings(cfg *Config, settings map[string]interface{}) error {
 		cfg.Dashboard = val
 	}
 
+	if raw, ok := lookupSetting(settings, "logerrors", "log_errors", "log-errors"); ok {
+		val, err := asBool(raw)
+		if err != nil {
+			return fmt.Errorf("logErrors: %w", err)
+		}
+		cfg.LogErrors = val
+	}
+
 	return nil
 }
 
@@ -299,6 +331,13 @@ func applyFlagOverrides(cfg *Config, fs *pflag.FlagSet) error {
 			return err
 		}
 		cfg.Dashboard = val
+	}
+	if fs.Changed("log-errors") {
+		val, err := fs.GetBool("log-errors")
+		if err != nil {
+			return err
+		}
+		cfg.LogErrors = val
 	}
 
 	vals, err := fs.GetStringSlice("header")

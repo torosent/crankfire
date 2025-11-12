@@ -20,6 +20,7 @@ type Config struct {
 	Retries     int               `mapstructure:"retries"`
 	JSONOutput  bool              `mapstructure:"json_output"`
 	Dashboard   bool              `mapstructure:"dashboard"`
+	LogErrors   bool              `mapstructure:"log_errors"`
 	ConfigFile  string            `mapstructure:"-"`
 }
 

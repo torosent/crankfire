@@ -70,6 +70,7 @@ crankfire --config loadtest.json
 | `--retries` | Number of retry attempts | 0 |
 | `--json-output` | Output results as JSON | false |
 | `--dashboard` | Show live terminal dashboard | false |
+| `--log-errors` | Log each failed request to stderr | false |
 | `--config` | Path to config file (JSON/YAML) | - |
 
 ## Configuration File
