@@ -58,7 +58,7 @@ crankfire --config loadtest.json
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--target` | Target URL to test | (required) |
-| `--method` | HTTP method (GET, POST, etc.) | GET |
+| `--method` | HTTP method (GET, POST, PUT, DELETE, PATCH, etc.; case-insensitive, defaults to GET when omitted) | GET |
 | `--header` | Add HTTP header (`Key=Value`, repeatable; last wins) | - |
 | `--body` | Inline request body | - |
 | `--body-file` | Path to request body file | - |

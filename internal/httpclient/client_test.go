@@ -118,6 +118,57 @@ func TestRequestBuilder_InvalidHeaderKeyWithNewline(t *testing.T) {
 	}
 }
 
+func TestRequestBuilder_MethodFallbackAndVerbs(t *testing.T) {
+	t.Run("fallback to GET when method empty", func(t *testing.T) {
+		cfg := &config.Config{TargetURL: "http://example.com"}
+		builder, err := NewRequestBuilder(cfg)
+		if err != nil {
+			t.Fatalf("NewRequestBuilder error = %v", err)
+		}
+		req, err := builder.Build(context.Background())
+		if err != nil {
+			t.Fatalf("Build error = %v", err)
+		}
+		if req.Method != http.MethodGet {
+			t.Fatalf("expected method GET, got %s", req.Method)
+		}
+	})
+
+	t.Run("supports common verbs including PATCH/PUT/DELETE", func(t *testing.T) {
+		verbs := []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodPatch}
+		for _, verb := range verbs {
+			t.Run(verb, func(t *testing.T) {
+				cfg := &config.Config{Method: verb, TargetURL: "http://example.com"}
+				builder, err := NewRequestBuilder(cfg)
+				if err != nil {
+					t.Fatalf("NewRequestBuilder error = %v", err)
+				}
+				req, err := builder.Build(context.Background())
+				if err != nil {
+					t.Fatalf("Build error = %v", err)
+				}
+				if req.Method != verb {
+					t.Fatalf("expected method %s, got %s", verb, req.Method)
+				}
+			})
+		}
+	})
+
+	t.Run("normalizes lower-case method to upper-case", func(t *testing.T) {
+		cfg := &config.Config{Method: "patch", TargetURL: "http://example.com"}
+		builder, err := NewRequestBuilder(cfg)
+		if err != nil {
+			t.Fatalf("NewRequestBuilder error = %v", err)
+		}
+		req, err := builder.Build(context.Background())
+		if err != nil {
+			t.Fatalf("Build error = %v", err)
+		}
+		if req.Method != http.MethodPatch {
+			t.Fatalf("expected method PATCH, got %s", req.Method)
+		}
+	})
+}
 func TestRequestBuilder_InvalidHeaderValueWithNewline(t *testing.T) {
 	cfg := &config.Config{
 		Method:    "GET",

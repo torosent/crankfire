@@ -44,6 +44,35 @@ func TestParseFlagsDefaults(t *testing.T) {
 	}
 }
 
+func TestMethodVariantsAndFallback(t *testing.T) {
+	loader := config.NewLoader()
+
+	t.Run("fallback to GET when method not provided", func(t *testing.T) {
+		cfg, err := loader.Load([]string{"--target", "http://example.com"})
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if cfg.Method != "GET" {
+			t.Fatalf("Method = %q, want GET", cfg.Method)
+		}
+	})
+
+	t.Run("accepts common verbs including PATCH/PUT/DELETE", func(t *testing.T) {
+		verbs := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
+		for _, verb := range verbs {
+			t.Run(verb, func(t *testing.T) {
+				cfg, err := loader.Load([]string{"--target", "http://example.com", "--method", verb})
+				if err != nil {
+					t.Fatalf("Load() error = %v", err)
+				}
+				if cfg.Method != verb {
+					t.Fatalf("Method = %q, want %q", cfg.Method, verb)
+				}
+			})
+		}
+	})
+}
+
 func TestLoadConfigFileJSON(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
