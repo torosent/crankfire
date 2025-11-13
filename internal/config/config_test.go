@@ -247,3 +247,137 @@ func TestConfigValidationErrors(t *testing.T) {
 		})
 	}
 }
+
+// ---- Headers specific tests ----
+
+func TestLoader_HeaderFlagParsing(t *testing.T) {
+	loader := config.NewLoader()
+	cfg, err := loader.Load([]string{"--target", "http://example.com", "--header", "Content-Type=application/json"})
+	if err != nil {
+		 t.Fatalf("unexpected error: %v", err)
+	}
+	if got := cfg.Headers["Content-Type"]; got != "application/json" {
+		 t.Fatalf("expected Content-Type=application/json, got %q", got)
+	}
+}
+
+func TestLoader_MultipleHeaderFlags(t *testing.T) {
+	loader := config.NewLoader()
+	cfg, err := loader.Load([]string{"--target", "http://example.com", "--header", "Content-Type=application/json", "--header", "X-Trace-Id=abc123", "--header", "X-Trace-Id=overwritten"})
+	if err != nil {
+		 t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Headers["Content-Type"] != "application/json" {
+		 t.Fatalf("unexpected Content-Type: %q", cfg.Headers["Content-Type"]) 
+	}
+	// last value wins
+	if cfg.Headers["X-Trace-Id"] != "overwritten" {
+		 t.Fatalf("expected X-Trace-Id to be 'overwritten', got %q", cfg.Headers["X-Trace-Id"]) 
+	}
+}
+
+func TestLoader_HeaderFlagInvalidFormat(t *testing.T) {
+	loader := config.NewLoader()
+	_, err := loader.Load([]string{"--target", "http://example.com", "--header", "MissingEquals"})
+	if err == nil {
+		 t.Fatalf("expected error for invalid header format")
+	}
+}
+
+func TestLoader_HeaderKeyCanonical(t *testing.T) {
+	loader := config.NewLoader()
+	cfg, err := loader.Load([]string{"--target", "http://example.com", "--header", "content-type=application/json", "--header", "x-custom-header=value"})
+	if err != nil {
+		 t.Fatalf("unexpected error: %v", err)
+	}
+	if _, ok := cfg.Headers["content-type"]; ok {
+		 t.Fatalf("raw lowercase key should be canonicalized")
+	}
+	if cfg.Headers["Content-Type"] != "application/json" {
+		 t.Fatalf("expected canonical Content-Type, got %q", cfg.Headers["Content-Type"]) 
+	}
+	if cfg.Headers["X-Custom-Header"] != "value" {
+		 t.Fatalf("expected X-Custom-Header=value, got %q", cfg.Headers["X-Custom-Header"]) 
+	}
+}
+
+func TestLoader_HeadersFromJSONConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cfg.json")
+	json := `{
+		"target": "http://example.com",
+		"headers": {"Authorization": "Bearer token123", "X-Env": "prod"}
+	}`
+	if err := os.WriteFile(path, []byte(json), 0644); err != nil {
+		 t.Fatalf("write config: %v", err)
+	}
+	loader := config.NewLoader()
+	cfg, err := loader.Load([]string{"--config", path})
+	if err != nil {
+		 t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Headers["Authorization"] != "Bearer token123" {
+		 t.Fatalf("expected Authorization header, got %q", cfg.Headers["Authorization"]) 
+	}
+	if cfg.Headers["X-Env"] != "prod" {
+		 t.Fatalf("expected X-Env=prod, got %q", cfg.Headers["X-Env"]) 
+	}
+}
+
+func TestLoader_HeadersFromYAMLConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cfg.yaml")
+	yaml := `target: http://example.com
+headers:
+  Authorization: Bearer t456
+  X-Env: staging
+`
+	if err := os.WriteFile(path, []byte(yaml), 0644); err != nil {
+		 t.Fatalf("write config: %v", err)
+	}
+	loader := config.NewLoader()
+	cfg, err := loader.Load([]string{"--config", path})
+	if err != nil {
+		 t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Headers["Authorization"] != "Bearer t456" {
+		 t.Fatalf("expected Authorization header, got %q", cfg.Headers["Authorization"]) 
+	}
+	if cfg.Headers["X-Env"] != "staging" {
+		 t.Fatalf("expected X-Env=staging, got %q", cfg.Headers["X-Env"]) 
+	}
+}
+
+func TestLoader_HeaderFlagOverridesConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cfg.json")
+	json := `{"target":"http://example.com","headers":{"X-Env":"prod","X-Trace-Id":"initial"}}`
+	if err := os.WriteFile(path, []byte(json), 0644); err != nil {
+		 t.Fatalf("write config: %v", err)
+	}
+	loader := config.NewLoader()
+	cfg, err := loader.Load([]string{"--config", path, "--header", "X-Env=staging", "--header", "X-Trace-Id=override"})
+	if err != nil {
+		 t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Headers["X-Env"] != "staging" {
+		 t.Fatalf("expected X-Env overridden to staging, got %q", cfg.Headers["X-Env"]) 
+	}
+	if cfg.Headers["X-Trace-Id"] != "override" {
+		 t.Fatalf("expected X-Trace-Id override, got %q", cfg.Headers["X-Trace-Id"]) 
+	}
+}
+
+func TestLoader_HeadersWithSpecialCharsAndEmptyValue(t *testing.T) {
+	loader := config.NewLoader()
+	cfg, err := loader.Load([]string{"--target", "http://example.com", "--header", "X-Sig=ab:c:def==", "--header", "X-Empty="})
+	if err != nil {
+		 t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Headers["X-Sig"] != "ab:c:def==" {
+		 t.Fatalf("expected X-Sig value preserved, got %q", cfg.Headers["X-Sig"]) 
+	}
+	if cfg.Headers["X-Empty"] != "" {
+		 t.Fatalf("expected X-Empty to be empty string, got %q", cfg.Headers["X-Empty"]) 
+	}
+}

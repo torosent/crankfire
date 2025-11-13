@@ -90,6 +90,92 @@ func TestBuildRequestWithHeaders(t *testing.T) {
 	}
 }
 
+func TestRequestBuilder_InvalidHeaderKey(t *testing.T) {
+	cfg := &config.Config{
+		Method:    "GET",
+		TargetURL: "http://example.com",
+		Headers: map[string]string{
+			"": "value",
+		},
+	}
+	_, err := NewRequestBuilder(cfg)
+	if err == nil {
+			 t.Fatalf("expected error for empty header key")
+	}
+}
+
+func TestRequestBuilder_InvalidHeaderKeyWithNewline(t *testing.T) {
+	cfg := &config.Config{
+		Method:    "GET",
+		TargetURL: "http://example.com",
+		Headers: map[string]string{
+			"Bad\nKey": "value",
+		},
+	}
+	_, err := NewRequestBuilder(cfg)
+	if err == nil {
+			 t.Fatalf("expected error for header key containing newline")
+	}
+}
+
+func TestRequestBuilder_InvalidHeaderValueWithNewline(t *testing.T) {
+	cfg := &config.Config{
+		Method:    "GET",
+		TargetURL: "http://example.com",
+		Headers: map[string]string{
+			"X-Test": "bad\rvalue",
+		},
+	}
+	_, err := NewRequestBuilder(cfg)
+	if err == nil {
+			 t.Fatalf("expected error for header value containing CR/LF")
+	}
+}
+
+func TestRequestBuilder_HeadersWithLongValues(t *testing.T) {
+	long := make([]byte, 2048)
+	for i := range long { long[i] = 'a' }
+	cfg := &config.Config{
+		Method:    "GET",
+		TargetURL: "http://example.com",
+		Headers: map[string]string{
+			"X-Long": string(long),
+		},
+	}
+	b, err := NewRequestBuilder(cfg)
+	if err != nil {
+			 t.Fatalf("unexpected error: %v", err)
+	}
+	req, err := b.Build(context.Background())
+	if err != nil {
+			 t.Fatalf("build failed: %v", err)
+	}
+	if got := req.Header.Get("X-Long"); got != string(long) {
+			 t.Fatalf("long header value mismatch")
+	}
+}
+
+func TestRequestBuilder_EmptyHeaderValueAllowed(t *testing.T) {
+	cfg := &config.Config{
+		Method:    "GET",
+		TargetURL: "http://example.com",
+		Headers: map[string]string{
+			"X-Empty": "",
+		},
+	}
+	b, err := NewRequestBuilder(cfg)
+	if err != nil {
+			 t.Fatalf("unexpected error: %v", err)
+	}
+	req, err := b.Build(context.Background())
+	if err != nil {
+			 t.Fatalf("build failed: %v", err)
+	}
+	if got := req.Header.Get("X-Empty"); got != "" {
+			 t.Fatalf("expected empty header value, got %q", got)
+	}
+}
+
 func TestBodySourceFromFile(t *testing.T) {
 	dir := t.TempDir()
 	filePath := filepath.Join(dir, "body.txt")

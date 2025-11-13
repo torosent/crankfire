@@ -39,7 +39,7 @@ crankfire --target https://httpbin.org/get \
 ```bash
 crankfire --target https://httpbin.org/post \
   --method POST \
-  --header "Content-Type: application/json" \
+  --header "Content-Type=application/json" \
   --body '{"user":"test","action":"create"}' \
   --total 50
 ```
@@ -58,7 +58,7 @@ Run test:
 ```bash
 crankfire --target https://httpbin.org/post \
   --method POST \
-  --header "Content-Type: application/json" \
+  --header "Content-Type=application/json" \
   --body-file payload.json \
   --concurrency 10 \
   --total 100
@@ -156,7 +156,7 @@ crankfire --config loadtest.json \
 
 ```bash
 crankfire --target https://api.example.com/protected \
-  --header "Authorization: Bearer eyJhbGc..." \
+  --header "Authorization=Bearer eyJhbGc..." \
   --total 100
 ```
 
@@ -164,7 +164,7 @@ crankfire --target https://api.example.com/protected \
 
 ```bash
 crankfire --target https://api.example.com/data \
-  --header "X-API-Key: your-api-key" \
+  --header "X-API-Key=your-api-key" \
   --total 100
 ```
 
@@ -173,7 +173,7 @@ crankfire --target https://api.example.com/data \
 ```bash
 # Use base64 encoded credentials
 crankfire --target https://api.example.com/admin \
-  --header "Authorization: Basic dXNlcjpwYXNz" \
+  --header "Authorization=Basic dXNlcjpwYXNz" \
   --total 50
 ```
 
@@ -312,3 +312,50 @@ done
 4. **Enable Retries**: For flaky networks or services
 5. **JSON Output**: Pipe to `jq` for automated analysis
 6. **Config Files**: Reuse test configurations across environments
+
+## Headers
+
+Crankfire supports headers via repeatable `--header` flags or config file maps.
+
+CLI format (use `Key=Value`):
+
+```bash
+crankfire --target https://api.example.com \
+  --header "Authorization=Bearer token123" \
+  --header "Content-Type=application/json" \
+  --header "X-Trace-Id=req-99"
+```
+
+Config examples:
+
+```json
+"headers": {"Authorization": "Bearer token123", "X-Env": "prod"}
+```
+
+```yaml
+headers:
+  Authorization: Bearer token123
+  X-Env: prod
+```
+
+Rules:
+- Keys canonicalized (e.g. `x-custom-id` -> `X-Custom-Id`).
+- Empty values allowed: `--header "X-Empty="`.
+- Last duplicate wins.
+- CLI flags override config values.
+- Invalid newline characters in keys/values are rejected.
+
+Override example:
+
+```bash
+crankfire --config base.yaml \
+  --header "Authorization=Bearer override"
+```
+
+Sending empty value:
+
+```bash
+crankfire --header "X-Feature-Flag="
+```
+
+Avoid colon syntax (`Key: Value`). Always use `Key=Value`.

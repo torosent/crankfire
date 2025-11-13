@@ -59,7 +59,7 @@ crankfire --config loadtest.json
 |------|-------------|---------|
 | `--target` | Target URL to test | (required) |
 | `--method` | HTTP method (GET, POST, etc.) | GET |
-| `--header` | Add header (can be repeated) | - |
+| `--header` | Add HTTP header (`Key=Value`, repeatable; last wins) | - |
 | `--body` | Inline request body | - |
 | `--body-file` | Path to request body file | - |
 | `--concurrency`, `-c` | Number of parallel workers | 1 |
@@ -109,6 +109,59 @@ duration: 1m
 timeout: 5s
 retries: 3
 ```
+
+### Headers
+
+You can supply headers via repeatable `--header` flags or in config files.
+
+CLI format uses `Key=Value` (no spaces around `=`):
+
+```bash
+crankfire --target https://api.example.com \
+  --header "Authorization=Bearer token123" \
+  --header "Content-Type=application/json" \
+  --header "X-Trace-Id=req-42"
+```
+
+Behavior:
+- Keys are canonicalized (e.g. `content-type` -> `Content-Type`).
+- Empty values are allowed: `--header "X-Empty="`.
+- Duplicate keys: last value wins.
+- Headers from flags override values defined in config files.
+- Newlines or control characters in keys/values are rejected.
+
+Config file headers use standard JSON/YAML maps:
+
+```json
+"headers": {
+  "Authorization": "Bearer token123",
+  "X-Env": "prod"
+}
+```
+
+```yaml
+headers:
+  Authorization: Bearer token123
+  X-Env: prod
+```
+
+Merging rules when both config and flags specify the same key: the last CLI flag overrides the config value.
+
+Examples (override):
+
+```bash
+crankfire --config base.json \
+  --header "Authorization=Bearer override-token"
+```
+
+To clear or intentionally send an empty value:
+
+```bash
+crankfire --header "X-Debug="
+```
+
+If you accidentally use a colon format (`Key: Value`), it will be treated as the full key (including the colon). Always prefer `Key=Value`.
+
 
 ## Output Examples
 
