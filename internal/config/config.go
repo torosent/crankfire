@@ -43,7 +43,7 @@ func (c Config) Validate() error {
 	var issues []string
 
 	if strings.TrimSpace(c.TargetURL) == "" {
-		issues = append(issues, "target is required")
+		issues = append(issues, "target is required (use --help for usage information)")
 	}
 
 	if c.Concurrency < 1 {
