@@ -3,6 +3,7 @@ package dashboard
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -21,18 +22,19 @@ type Dashboard struct {
 	mu        sync.Mutex
 
 	// Widgets
-	grid            *ui.Grid
-	latencySparkle  *widgets.SparklineGroup
-	latencyPara     *widgets.Paragraph
-	rpsGauge        *widgets.Gauge
-	errorList       *widgets.List
-	summaryPara     *widgets.Paragraph
-	metricsPara     *widgets.Paragraph
-	latencyHistory  []float64
-	rpsHistory      []float64
-	errorBreakdown  map[string]int
-	lastUpdateTime  time.Time
-	startTime       time.Time
+	grid           *ui.Grid
+	latencySparkle *widgets.SparklineGroup
+	latencyPara    *widgets.Paragraph
+	rpsGauge       *widgets.Gauge
+	errorList      *widgets.List
+	endpointList   *widgets.List
+	summaryPara    *widgets.Paragraph
+	metricsPara    *widgets.Paragraph
+	latencyHistory []float64
+	rpsHistory     []float64
+	errorBreakdown map[string]int
+	lastUpdateTime time.Time
+	startTime      time.Time
 }
 
 // New creates a new Dashboard.
@@ -93,6 +95,13 @@ func (d *Dashboard) initWidgets() {
 	d.errorList.TextStyle = ui.NewStyle(ui.ColorYellow)
 	d.errorList.BorderStyle.Fg = ui.ColorCyan
 
+	// Endpoint List
+	d.endpointList = widgets.NewList()
+	d.endpointList.Title = "Endpoints"
+	d.endpointList.Rows = []string{"Awaiting data"}
+	d.endpointList.TextStyle = ui.NewStyle(ui.ColorCyan)
+	d.endpointList.BorderStyle.Fg = ui.ColorCyan
+
 	// Summary Paragraph
 	d.summaryPara = widgets.NewParagraph()
 	d.summaryPara.Title = "Test Summary"
@@ -127,7 +136,8 @@ func (d *Dashboard) setupGrid() {
 			ui.NewCol(0.35, d.latencyPara),
 		),
 		ui.NewRow(0.34,
-			ui.NewCol(1.0, d.errorList),
+			ui.NewCol(0.5, d.endpointList),
+			ui.NewCol(0.5, d.errorList),
 		),
 	)
 }
@@ -173,7 +183,7 @@ func (d *Dashboard) run() {
 				return
 			default:
 			}
-			
+
 			switch e.ID {
 			case "q", "<C-c>":
 				return
@@ -257,12 +267,31 @@ func (d *Dashboard) update() {
 	if len(stats.Errors) == 0 {
 		d.errorList.Rows = []string{"[No errors](fg:green)"}
 	} else {
-		rows := make([]string, 0, len(stats.Errors))
-		for errType, count := range stats.Errors {
-			rows = append(rows, fmt.Sprintf("[%s:](fg:red) %d", errType, count))
+		type errorRow struct {
+			label string
+			count int
 		}
-		d.errorList.Rows = rows
+		rows := make([]errorRow, 0, len(stats.Errors))
+		for errType, count := range stats.Errors {
+			rows = append(rows, errorRow{
+				label: metrics.FriendlyErrorName(errType),
+				count: count,
+			})
+		}
+		sort.Slice(rows, func(i, j int) bool {
+			if rows[i].count == rows[j].count {
+				return rows[i].label < rows[j].label
+			}
+			return rows[i].count > rows[j].count
+		})
+		formatted := make([]string, 0, len(rows))
+		for _, row := range rows {
+			formatted = append(formatted, fmt.Sprintf("[%s](fg:red) %d", row.label, row.count))
+		}
+		d.errorList.Rows = formatted
 	}
+
+	d.updateEndpointList(stats)
 }
 
 // render draws all widgets to the screen.
@@ -271,4 +300,40 @@ func (d *Dashboard) render() {
 	defer d.mu.Unlock()
 
 	ui.Render(d.grid)
+}
+
+func (d *Dashboard) updateEndpointList(stats metrics.Stats) {
+	if len(stats.Endpoints) == 0 {
+		d.endpointList.Rows = []string{"[No endpoint data](fg:green)"}
+		return
+	}
+	type endpointRow struct {
+		name string
+		stat metrics.EndpointStats
+	}
+	rows := make([]endpointRow, 0, len(stats.Endpoints))
+	for name, stat := range stats.Endpoints {
+		rows = append(rows, endpointRow{name: name, stat: stat})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].stat.Total == rows[j].stat.Total {
+			return rows[i].name < rows[j].name
+		}
+		return rows[i].stat.Total > rows[j].stat.Total
+	})
+	formatted := make([]string, 0, len(rows))
+	for _, entry := range rows {
+		share := 0.0
+		if stats.Total > 0 {
+			share = (float64(entry.stat.Total) / float64(stats.Total)) * 100
+		}
+		formatted = append(formatted, fmt.Sprintf("[%s](fg:cyan) | %5.1f%% | RPS %5.1f | P99 %5.1fms | Err %d",
+			entry.name,
+			share,
+			entry.stat.RequestsPerSec,
+			entry.stat.P99LatencyMs,
+			entry.stat.Failures,
+		))
+	}
+	d.endpointList.Rows = formatted
 }

@@ -13,11 +13,11 @@ func TestCollectorLatencyStats(t *testing.T) {
 	c := metrics.NewCollector()
 
 	// Record deterministic latencies.
-	c.RecordRequest(10*time.Millisecond, nil)
-	c.RecordRequest(20*time.Millisecond, nil)
-	c.RecordRequest(30*time.Millisecond, nil)
-	c.RecordRequest(40*time.Millisecond, nil)
-	c.RecordRequest(50*time.Millisecond, nil)
+	c.RecordRequest(10*time.Millisecond, nil, nil)
+	c.RecordRequest(20*time.Millisecond, nil, nil)
+	c.RecordRequest(30*time.Millisecond, nil, nil)
+	c.RecordRequest(40*time.Millisecond, nil, nil)
+	c.RecordRequest(50*time.Millisecond, nil, nil)
 
 	stats := c.Stats(0)
 
@@ -47,7 +47,7 @@ func TestPercentilesCalculations(t *testing.T) {
 
 	// 100 samples: 1ms, 2ms, ..., 100ms.
 	for i := 1; i <= 100; i++ {
-		c.RecordRequest(time.Duration(i)*time.Millisecond, nil)
+		c.RecordRequest(time.Duration(i)*time.Millisecond, nil, nil)
 	}
 
 	stats := c.Stats(0)
@@ -69,8 +69,8 @@ func TestPercentilesCalculations(t *testing.T) {
 func TestJSONReportSchema(t *testing.T) {
 	c := metrics.NewCollector()
 
-	c.RecordRequest(15*time.Millisecond, nil)
-	c.RecordRequest(25*time.Millisecond, nil)
+	c.RecordRequest(15*time.Millisecond, nil, nil)
+	c.RecordRequest(25*time.Millisecond, nil, nil)
 
 	stats := c.Stats(100 * time.Millisecond)
 
@@ -104,7 +104,7 @@ func TestConcurrentRecording(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < recordsPerWorker; j++ {
-				c.RecordRequest(time.Millisecond, nil)
+				c.RecordRequest(time.Millisecond, nil, nil)
 			}
 		}()
 	}
@@ -114,5 +114,27 @@ func TestConcurrentRecording(t *testing.T) {
 	expected := workers * recordsPerWorker
 	if stats.Total != int64(expected) {
 		t.Errorf("expected total %d, got %d", expected, stats.Total)
+	}
+}
+
+func TestEndpointBreakdown(t *testing.T) {
+	c := metrics.NewCollector()
+	c.RecordRequest(10*time.Millisecond, nil, &metrics.RequestMetadata{Endpoint: "users"})
+	c.RecordRequest(20*time.Millisecond, nil, &metrics.RequestMetadata{Endpoint: "users"})
+	c.RecordRequest(15*time.Millisecond, nil, &metrics.RequestMetadata{Endpoint: "orders"})
+
+	stats := c.Stats(2 * time.Second)
+	if len(stats.Endpoints) != 2 {
+		t.Fatalf("expected 2 endpoint stats, got %d", len(stats.Endpoints))
+	}
+	users := stats.Endpoints["users"]
+	if users.Total != 2 {
+		t.Fatalf("expected users total 2, got %d", users.Total)
+	}
+	if users.P50LatencyMs == 0 {
+		t.Fatalf("expected percentile calculations for users endpoint")
+	}
+	if users.RequestsPerSec <= 0 {
+		t.Fatalf("expected users RPS to be > 0")
 	}
 }

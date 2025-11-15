@@ -42,6 +42,9 @@ func TestParseFlagsDefaults(t *testing.T) {
 	if len(cfg.Headers) != 0 {
 		t.Errorf("Headers len = %d, want 0", len(cfg.Headers))
 	}
+	if cfg.Arrival.Model != config.ArrivalModelUniform {
+		t.Errorf("Arrival model = %q, want uniform", cfg.Arrival.Model)
+	}
 }
 
 func TestMethodVariantsAndFallback(t *testing.T) {
@@ -186,6 +189,106 @@ func TestLoadConfigFileYAML(t *testing.T) {
 	}
 }
 
+func TestArrivalModelFlagOverride(t *testing.T) {
+	loader := config.NewLoader()
+	cfg, err := loader.Load([]string{"--target", "http://example.com", "--arrival-model", "poisson"})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Arrival.Model != config.ArrivalModelPoisson {
+		t.Fatalf("Arrival model = %q, want poisson", cfg.Arrival.Model)
+	}
+}
+
+func TestLoadPatternsAndArrivalFromYAML(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "complex.yaml")
+	content := strings.Join([]string{
+		"target: https://api.example.com",
+		"load_patterns:",
+		"  - name: warmup",
+		"    type: ramp",
+		"    from_rps: 10",
+		"    to_rps: 200",
+		"    duration: 2m",
+		"  - type: step",
+		"    steps:",
+		"      - rps: 100",
+		"        duration: 1m",
+		"      - rps: 200",
+		"        duration: 30s",
+		"  - name: spike",
+		"    type: spike",
+		"    rps: 500",
+		"    duration: 15s",
+		"arrival:",
+		"  model: poisson",
+	}, "\n")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	loader := config.NewLoader()
+	cfg, err := loader.Load([]string{"--config", path})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if len(cfg.LoadPatterns) != 3 {
+		t.Fatalf("LoadPatterns len = %d, want 3", len(cfg.LoadPatterns))
+	}
+	if cfg.LoadPatterns[0].Type != config.LoadPatternTypeRamp {
+		t.Errorf("first pattern type = %q, want ramp", cfg.LoadPatterns[0].Type)
+	}
+	if cfg.LoadPatterns[1].Type != config.LoadPatternTypeStep || len(cfg.LoadPatterns[1].Steps) != 2 {
+		t.Errorf("step pattern not parsed correctly: %+v", cfg.LoadPatterns[1])
+	}
+	if cfg.LoadPatterns[2].Type != config.LoadPatternTypeSpike || cfg.LoadPatterns[2].RPS != 500 {
+		t.Errorf("spike pattern missing fields: %+v", cfg.LoadPatterns[2])
+	}
+	if cfg.Arrival.Model != config.ArrivalModelPoisson {
+		t.Errorf("Arrival model = %q, want poisson", cfg.Arrival.Model)
+	}
+}
+
+func TestEndpointsParsingFromJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "endpoints.json")
+	json := `{
+		"target": "https://api.example.com",
+		"endpoints": [
+			{"name":"list-users","weight":60,"path":"/users","method":"get"},
+			{"name":"user-detail","weight":30,"url":"https://api.example.com/users/{id}","headers":{"x-trace-id":"abc"}},
+			{"name":"create-order","weight":10,"method":"POST","body":"{\"foo\":\"bar\"}"}
+		]
+	}`
+	if err := os.WriteFile(path, []byte(json), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	loader := config.NewLoader()
+	cfg, err := loader.Load([]string{"--config", path})
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if len(cfg.Endpoints) != 3 {
+		t.Fatalf("Endpoints len = %d, want 3", len(cfg.Endpoints))
+	}
+	if cfg.Endpoints[0].Method != "GET" {
+		t.Errorf("first endpoint method = %q, want GET", cfg.Endpoints[0].Method)
+	}
+	if cfg.Endpoints[0].Path != "/users" {
+		t.Errorf("first endpoint path = %q, want /users", cfg.Endpoints[0].Path)
+	}
+	if cfg.Endpoints[1].Headers["X-Trace-Id"] != "abc" {
+		t.Errorf("headers not canonicalized: %+v", cfg.Endpoints[1].Headers)
+	}
+	if cfg.Endpoints[2].Weight != 10 {
+		t.Errorf("weight = %d, want 10", cfg.Endpoints[2].Weight)
+	}
+}
+
 func TestFlagBodyOverridesConfigBodyFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.json")
@@ -277,16 +380,40 @@ func TestConfigValidationErrors(t *testing.T) {
 	}
 }
 
+func TestConfigValidationAdvancedErrors(t *testing.T) {
+	t.Run("invalid ramp pattern", func(t *testing.T) {
+		cfg := config.Config{
+			TargetURL: "https://api.example.com",
+			LoadPatterns: []config.LoadPattern{
+				{Type: config.LoadPatternTypeRamp, FromRPS: 10, ToRPS: 100},
+			},
+		}
+		if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "duration") {
+			t.Fatalf("expected duration error, got %v", err)
+		}
+	})
+
+	t.Run("endpoint weight", func(t *testing.T) {
+		cfg := config.Config{
+			TargetURL: "https://api.example.com",
+			Endpoints: []config.Endpoint{{Name: "bad", Weight: 0}},
+		}
+		if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "weight") {
+			t.Fatalf("expected weight error, got %v", err)
+		}
+	})
+}
+
 // ---- Headers specific tests ----
 
 func TestLoader_HeaderFlagParsing(t *testing.T) {
 	loader := config.NewLoader()
 	cfg, err := loader.Load([]string{"--target", "http://example.com", "--header", "Content-Type=application/json"})
 	if err != nil {
-		 t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 	if got := cfg.Headers["Content-Type"]; got != "application/json" {
-		 t.Fatalf("expected Content-Type=application/json, got %q", got)
+		t.Fatalf("expected Content-Type=application/json, got %q", got)
 	}
 }
 
@@ -294,14 +421,14 @@ func TestLoader_MultipleHeaderFlags(t *testing.T) {
 	loader := config.NewLoader()
 	cfg, err := loader.Load([]string{"--target", "http://example.com", "--header", "Content-Type=application/json", "--header", "X-Trace-Id=abc123", "--header", "X-Trace-Id=overwritten"})
 	if err != nil {
-		 t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 	if cfg.Headers["Content-Type"] != "application/json" {
-		 t.Fatalf("unexpected Content-Type: %q", cfg.Headers["Content-Type"]) 
+		t.Fatalf("unexpected Content-Type: %q", cfg.Headers["Content-Type"])
 	}
 	// last value wins
 	if cfg.Headers["X-Trace-Id"] != "overwritten" {
-		 t.Fatalf("expected X-Trace-Id to be 'overwritten', got %q", cfg.Headers["X-Trace-Id"]) 
+		t.Fatalf("expected X-Trace-Id to be 'overwritten', got %q", cfg.Headers["X-Trace-Id"])
 	}
 }
 
@@ -309,7 +436,7 @@ func TestLoader_HeaderFlagInvalidFormat(t *testing.T) {
 	loader := config.NewLoader()
 	_, err := loader.Load([]string{"--target", "http://example.com", "--header", "MissingEquals"})
 	if err == nil {
-		 t.Fatalf("expected error for invalid header format")
+		t.Fatalf("expected error for invalid header format")
 	}
 }
 
@@ -317,16 +444,16 @@ func TestLoader_HeaderKeyCanonical(t *testing.T) {
 	loader := config.NewLoader()
 	cfg, err := loader.Load([]string{"--target", "http://example.com", "--header", "content-type=application/json", "--header", "x-custom-header=value"})
 	if err != nil {
-		 t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 	if _, ok := cfg.Headers["content-type"]; ok {
-		 t.Fatalf("raw lowercase key should be canonicalized")
+		t.Fatalf("raw lowercase key should be canonicalized")
 	}
 	if cfg.Headers["Content-Type"] != "application/json" {
-		 t.Fatalf("expected canonical Content-Type, got %q", cfg.Headers["Content-Type"]) 
+		t.Fatalf("expected canonical Content-Type, got %q", cfg.Headers["Content-Type"])
 	}
 	if cfg.Headers["X-Custom-Header"] != "value" {
-		 t.Fatalf("expected X-Custom-Header=value, got %q", cfg.Headers["X-Custom-Header"]) 
+		t.Fatalf("expected X-Custom-Header=value, got %q", cfg.Headers["X-Custom-Header"])
 	}
 }
 
@@ -338,18 +465,18 @@ func TestLoader_HeadersFromJSONConfigFile(t *testing.T) {
 		"headers": {"Authorization": "Bearer token123", "X-Env": "prod"}
 	}`
 	if err := os.WriteFile(path, []byte(json), 0644); err != nil {
-		 t.Fatalf("write config: %v", err)
+		t.Fatalf("write config: %v", err)
 	}
 	loader := config.NewLoader()
 	cfg, err := loader.Load([]string{"--config", path})
 	if err != nil {
-		 t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 	if cfg.Headers["Authorization"] != "Bearer token123" {
-		 t.Fatalf("expected Authorization header, got %q", cfg.Headers["Authorization"]) 
+		t.Fatalf("expected Authorization header, got %q", cfg.Headers["Authorization"])
 	}
 	if cfg.Headers["X-Env"] != "prod" {
-		 t.Fatalf("expected X-Env=prod, got %q", cfg.Headers["X-Env"]) 
+		t.Fatalf("expected X-Env=prod, got %q", cfg.Headers["X-Env"])
 	}
 }
 
@@ -362,18 +489,18 @@ headers:
   X-Env: staging
 `
 	if err := os.WriteFile(path, []byte(yaml), 0644); err != nil {
-		 t.Fatalf("write config: %v", err)
+		t.Fatalf("write config: %v", err)
 	}
 	loader := config.NewLoader()
 	cfg, err := loader.Load([]string{"--config", path})
 	if err != nil {
-		 t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 	if cfg.Headers["Authorization"] != "Bearer t456" {
-		 t.Fatalf("expected Authorization header, got %q", cfg.Headers["Authorization"]) 
+		t.Fatalf("expected Authorization header, got %q", cfg.Headers["Authorization"])
 	}
 	if cfg.Headers["X-Env"] != "staging" {
-		 t.Fatalf("expected X-Env=staging, got %q", cfg.Headers["X-Env"]) 
+		t.Fatalf("expected X-Env=staging, got %q", cfg.Headers["X-Env"])
 	}
 }
 
@@ -382,18 +509,18 @@ func TestLoader_HeaderFlagOverridesConfig(t *testing.T) {
 	path := filepath.Join(dir, "cfg.json")
 	json := `{"target":"http://example.com","headers":{"X-Env":"prod","X-Trace-Id":"initial"}}`
 	if err := os.WriteFile(path, []byte(json), 0644); err != nil {
-		 t.Fatalf("write config: %v", err)
+		t.Fatalf("write config: %v", err)
 	}
 	loader := config.NewLoader()
 	cfg, err := loader.Load([]string{"--config", path, "--header", "X-Env=staging", "--header", "X-Trace-Id=override"})
 	if err != nil {
-		 t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 	if cfg.Headers["X-Env"] != "staging" {
-		 t.Fatalf("expected X-Env overridden to staging, got %q", cfg.Headers["X-Env"]) 
+		t.Fatalf("expected X-Env overridden to staging, got %q", cfg.Headers["X-Env"])
 	}
 	if cfg.Headers["X-Trace-Id"] != "override" {
-		 t.Fatalf("expected X-Trace-Id override, got %q", cfg.Headers["X-Trace-Id"]) 
+		t.Fatalf("expected X-Trace-Id override, got %q", cfg.Headers["X-Trace-Id"])
 	}
 }
 
@@ -401,12 +528,12 @@ func TestLoader_HeadersWithSpecialCharsAndEmptyValue(t *testing.T) {
 	loader := config.NewLoader()
 	cfg, err := loader.Load([]string{"--target", "http://example.com", "--header", "X-Sig=ab:c:def==", "--header", "X-Empty="})
 	if err != nil {
-		 t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 	if cfg.Headers["X-Sig"] != "ab:c:def==" {
-		 t.Fatalf("expected X-Sig value preserved, got %q", cfg.Headers["X-Sig"]) 
+		t.Fatalf("expected X-Sig value preserved, got %q", cfg.Headers["X-Sig"])
 	}
 	if cfg.Headers["X-Empty"] != "" {
-		 t.Fatalf("expected X-Empty to be empty string, got %q", cfg.Headers["X-Empty"]) 
+		t.Fatalf("expected X-Empty to be empty string, got %q", cfg.Headers["X-Empty"])
 	}
 }

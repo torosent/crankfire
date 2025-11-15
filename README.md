@@ -12,6 +12,7 @@ An optimized command-line load testing tool written in Go for HTTP endpoints.
 - **Adaptive Retry Logic**: Conditional retries with exponential backoff + jitter
 - **Multiple Output Formats**: Human-readable or structured JSON (includes error breakdown)
 - **Real-time Progress**: Lightweight periodic CLI updates
+- **Advanced Workload Modeling**: Ramp/step/spike phases, Poisson arrivals, and weighted endpoint mixes
 
 ## Installation
 
@@ -79,6 +80,7 @@ crankfire --config loadtest.json
 | `--total`, `-t` | Total number of requests | 0 |
 | `--timeout` | Per-request timeout | 30s |
 | `--retries` | Number of retry attempts | 0 |
+| `--arrival-model` | Arrival model (`uniform` or `poisson`) | uniform |
 | `--json-output` | Output results as JSON | false |
 | `--dashboard` | Show live terminal dashboard | false |
 | `--log-errors` | Log each failed request to stderr | false |
@@ -120,6 +122,57 @@ duration: 1m
 timeout: 5s
 retries: 3
 ```
+
+### Advanced Workload Modeling
+
+Describe multi-phase workloads, realistic arrival processes, and weighted endpoint mixes directly in configuration files. Phases execute on a single shared timeline, while global caps like `duration` and `total` still provide safety limits.
+
+```yaml
+target: https://api.example.com
+concurrency: 40
+load_patterns:
+  - name: warmup
+    type: ramp
+    from_rps: 10
+    to_rps: 400
+    duration: 5m
+  - name: soak
+    type: step
+    steps:
+      - rps: 400
+        duration: 10m
+      - rps: 600
+        duration: 10m
+  - name: spike
+    type: spike
+    rps: 1000
+    duration: 30s
+arrival:
+  model: poisson
+endpoints:
+  - name: list-users
+    weight: 60
+    path: /users
+  - name: user-detail
+    weight: 30
+    path: /users/{id}
+  - name: create-order
+    weight: 10
+    path: /orders
+    method: POST
+    body: '{"status":"pending"}'
+```
+
+Endpoints inherit the global target URL, method, headers, and body unless you override them per entry. Weights are relative (they do not need to sum to 100); Crankfire randomly selects an endpoint using those proportions. Arrival modeling defaults to uniform spacing but can be switched to Poisson either in config or via `--arrival-model`.
+
+#### Arrival Models
+
+Crankfire’s scheduler releases work according to the selected arrival model:
+
+- `uniform` (default) spreads permits evenly over time, producing a steady request cadence that is ideal when you want predictable background load.
+- `poisson` samples inter-arrival gaps from an exponential distribution to create natural clustering. Average RPS stays aligned with your plan, but individual requests arrive in bursts that better resemble independent users.
+
+Both models honor global constraints such as `rate`, `total`, `duration`, and any load pattern phases. Switching models only changes when a worker is allowed to fire—not the total number of requests you configured.
 
 ### Headers
 
@@ -217,6 +270,25 @@ crankfire --target https://example.com --total 100 --json-output
   "errors": {
     "*runner.HTTPError": 2,
     "*context.deadlineExceeded": 1
+  },
+  "endpoints": {
+    "list-users": {
+      "total": 600,
+      "successes": 600,
+      "failures": 0,
+      "p99_latency_ms": 95.1,
+      "requests_per_sec": 58.6
+    },
+    "create-order": {
+      "total": 400,
+      "successes": 392,
+      "failures": 8,
+      "p99_latency_ms": 180.4,
+      "requests_per_sec": 39.1,
+      "errors": {
+        "*runner.HTTPError": 8
+      }
+    }
   }
 }
 ```
@@ -229,6 +301,7 @@ The dashboard provides a real-time, interactive view of your load test with the 
 - **RPS Gauge**: Current requests per second with percentage indicator
 - **Metrics Table**: Real-time statistics including total requests, success/failure counts, and latency percentiles
 - **Error Breakdown**: List of errors by type with count
+- **Endpoint Breakdown**: Weighted endpoint view with live share, RPS, and tail latency
 - **Test Summary**: Elapsed time, total requests, and success rate
 
 ### Usage
@@ -248,7 +321,7 @@ crankfire --target https://api.example.com \
 │ Elapsed: 30s | Total: 3000 | Success Rate: 98.5%               │
 └────────────────────────────────────────────────────────────────┘
 
-┌ Requests Per Second ┐  ┌ Metrics ──────────────────────────────┐
+┌ Requests Per Second -┐  ┌ Metrics ──────────────────────────────┐
 │ 100.5 RPS            │  │ Total Requests    3000                │
 │ ████████████░░░░░░   │  │ Successes         2955                │
 │ 85%                  │  │ Failures          45                  │
@@ -259,13 +332,18 @@ crankfire --target https://api.example.com \
                           └───────────────────────────────────────┘
 
 ┌ Real-time Latency ─────────────────────────────────────────────┐
-│ Latency (ms)                                                    │
-│ ▂▃▄▅▃▂▃▄▅▆▅▄▃▂▃▄▅▆▇▆▅▄▃▂▃▄▅▆▅▄▃▂                              │
+│ Latency (ms)                                                   │
+│ ▂▃▄▅▃▂▃▄▅▆▅▄▃▂▃▄▅▆▇▆▅▄▃▂▃▄▅▆▅▄▃▂                               │
+└────────────────────────────────────────────────────────────────┘
+
+┌ Endpoints ─────────────────────────────────────────────────────┐
+│ list-users  | 60.0% | RPS 240.0 | P99 120.3ms | Err 2          │
+│ create-order| 40.0% | RPS 160.0 | P99 210.5ms | Err 12         │
 └────────────────────────────────────────────────────────────────┘
 
 ┌ Error Breakdown ───────────────────────────────────────────────┐
-│ *runner.HTTPError: 38                                           │
-│ context.deadlineExceededError: 7                                │
+│ *runner.HTTPError: 38                                          │
+│ context.deadlineExceededError: 7                               │
 └────────────────────────────────────────────────────────────────┘
 ```
 
