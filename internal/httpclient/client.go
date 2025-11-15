@@ -13,11 +13,27 @@ import (
 	"github.com/torosent/crankfire/internal/config"
 )
 
+// AuthProvider supplies authentication tokens and injects them into HTTP requests.
+type AuthProvider interface {
+	Token(ctx context.Context) (string, error)
+	InjectHeader(ctx context.Context, req *http.Request) error
+	Close() error
+}
+
+// Feeder provides per-request data records for placeholder substitution.
+type Feeder interface {
+	Next(ctx context.Context) (map[string]string, error)
+	Close() error
+	Len() int
+}
+
 type RequestBuilder struct {
-	method  string
-	target  string
-	headers http.Header
-	body    BodySource
+	method       string
+	target       string
+	headers      http.Header
+	body         BodySource
+	authProvider AuthProvider
+	feeder       Feeder
 }
 
 func NewRequestBuilder(cfg *config.Config) (*RequestBuilder, error) {
@@ -73,6 +89,37 @@ func NewRequestBuilder(cfg *config.Config) (*RequestBuilder, error) {
 	}, nil
 }
 
+// NewRequestBuilderWithAuth creates a RequestBuilder with an auth provider for automatic token injection.
+func NewRequestBuilderWithAuth(cfg *config.Config, provider AuthProvider) (*RequestBuilder, error) {
+	builder, err := NewRequestBuilder(cfg)
+	if err != nil {
+		return nil, err
+	}
+	builder.authProvider = provider
+	return builder, nil
+}
+
+// NewRequestBuilderWithFeeder creates a RequestBuilder with a feeder for per-request data injection.
+func NewRequestBuilderWithFeeder(cfg *config.Config, feeder Feeder) (*RequestBuilder, error) {
+	builder, err := NewRequestBuilder(cfg)
+	if err != nil {
+		return nil, err
+	}
+	builder.feeder = feeder
+	return builder, nil
+}
+
+// NewRequestBuilderWithAuthAndFeeder creates a RequestBuilder with both auth and feeder.
+func NewRequestBuilderWithAuthAndFeeder(cfg *config.Config, provider AuthProvider, feeder Feeder) (*RequestBuilder, error) {
+	builder, err := NewRequestBuilder(cfg)
+	if err != nil {
+		return nil, err
+	}
+	builder.authProvider = provider
+	builder.feeder = feeder
+	return builder, nil
+}
+
 func (b *RequestBuilder) Build(ctx context.Context) (*http.Request, error) {
 	if b == nil {
 		return nil, errors.New("builder cannot be nil")
@@ -82,12 +129,39 @@ func (b *RequestBuilder) Build(ctx context.Context) (*http.Request, error) {
 		ctx = context.Background()
 	}
 
+	// Get feeder record if feeder is present
+	var record map[string]string
+	if b.feeder != nil {
+		var err error
+		record, err = b.feeder.Next(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("feeder exhausted: %w", err)
+		}
+	}
+
+	// Apply placeholder substitution to target URL
+	target := b.target
+	if record != nil {
+		target = substitutePlaceholders(target, record)
+	}
+
 	reader, err := b.body.NewReader()
 	if err != nil {
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, b.method, b.target, reader)
+	// If feeder is present, apply substitution to body
+	if record != nil {
+		bodyBytes, err := io.ReadAll(reader)
+		_ = reader.Close()
+		if err != nil {
+			return nil, fmt.Errorf("read body for substitution: %w", err)
+		}
+		bodyStr := substitutePlaceholders(string(bodyBytes), record)
+		reader = io.NopCloser(strings.NewReader(bodyStr))
+	}
+
+	req, err := http.NewRequestWithContext(ctx, b.method, target, reader)
 	if err != nil {
 		_ = reader.Close()
 		return nil, err
@@ -97,6 +171,10 @@ func (b *RequestBuilder) Build(ctx context.Context) (*http.Request, error) {
 		req.Header = make(http.Header, len(b.headers))
 		for key, values := range b.headers {
 			for _, val := range values {
+				// Apply placeholder substitution to header values
+				if record != nil {
+					val = substitutePlaceholders(val, record)
+				}
 				req.Header.Add(key, val)
 			}
 		}
@@ -110,7 +188,24 @@ func (b *RequestBuilder) Build(ctx context.Context) (*http.Request, error) {
 		return b.body.NewReader()
 	}
 
+	// Inject auth header if provider is present
+	if b.authProvider != nil {
+		if err := b.authProvider.InjectHeader(ctx, req); err != nil {
+			return nil, fmt.Errorf("auth provider inject header: %w", err)
+		}
+	}
+
 	return req, nil
+}
+
+// substitutePlaceholders replaces {{field_name}} patterns with values from the record.
+func substitutePlaceholders(template string, record map[string]string) string {
+	result := template
+	for key, value := range record {
+		placeholder := "{{" + key + "}}"
+		result = strings.ReplaceAll(result, placeholder, value)
+	}
+	return result
 }
 
 func NewClient(timeout time.Duration) *http.Client {

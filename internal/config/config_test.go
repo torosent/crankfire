@@ -537,3 +537,362 @@ func TestLoader_HeadersWithSpecialCharsAndEmptyValue(t *testing.T) {
 		t.Fatalf("expected X-Empty to be empty string, got %q", cfg.Headers["X-Empty"])
 	}
 }
+
+// ---- Auth config parsing tests ----
+
+func TestConfigParsesAuthBlocks(t *testing.T) {
+	t.Run("OAuth2 client_credentials from YAML", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "auth.yaml")
+		content := strings.Join([]string{
+			"target: https://api.example.com",
+			"auth:",
+			"  type: oauth2_client_credentials",
+			"  token_url: https://idp.example.com/token",
+			"  client_id: test-client",
+			"  client_secret: secret123",
+			"  scopes:",
+			"    - read",
+			"    - write",
+			"  refresh_before_expiry: 30s",
+		}, "\n")
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		loader := config.NewLoader()
+		cfg, err := loader.Load([]string{"--config", path})
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+
+		if cfg.Auth.Type != config.AuthTypeOAuth2ClientCredentials {
+			t.Errorf("Auth.Type = %q, want oauth2_client_credentials", cfg.Auth.Type)
+		}
+		if cfg.Auth.TokenURL != "https://idp.example.com/token" {
+			t.Errorf("Auth.TokenURL = %q, want https://idp.example.com/token", cfg.Auth.TokenURL)
+		}
+		if cfg.Auth.ClientID != "test-client" {
+			t.Errorf("Auth.ClientID = %q, want test-client", cfg.Auth.ClientID)
+		}
+		if cfg.Auth.ClientSecret != "secret123" {
+			t.Errorf("Auth.ClientSecret = %q, want secret123", cfg.Auth.ClientSecret)
+		}
+		if len(cfg.Auth.Scopes) != 2 || cfg.Auth.Scopes[0] != "read" || cfg.Auth.Scopes[1] != "write" {
+			t.Errorf("Auth.Scopes = %v, want [read write]", cfg.Auth.Scopes)
+		}
+		if cfg.Auth.RefreshBeforeExpiry != 30*time.Second {
+			t.Errorf("Auth.RefreshBeforeExpiry = %s, want 30s", cfg.Auth.RefreshBeforeExpiry)
+		}
+	})
+
+	t.Run("OAuth2 resource_owner_password from JSON", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "auth.json")
+		json := `{
+			"target": "https://api.example.com",
+			"auth": {
+				"type": "oauth2_resource_owner",
+				"token_url": "https://idp.example.com/token",
+				"client_id": "client-id",
+				"client_secret": "client-secret",
+				"username": "user@example.com",
+				"password": "userpass",
+				"scopes": ["api"],
+				"refresh_before_expiry": "1m"
+			}
+		}`
+		if err := os.WriteFile(path, []byte(json), 0o600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		loader := config.NewLoader()
+		cfg, err := loader.Load([]string{"--config", path})
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+
+		if cfg.Auth.Type != config.AuthTypeOAuth2ResourceOwner {
+			t.Errorf("Auth.Type = %q, want oauth2_resource_owner", cfg.Auth.Type)
+		}
+		if cfg.Auth.Username != "user@example.com" {
+			t.Errorf("Auth.Username = %q, want user@example.com", cfg.Auth.Username)
+		}
+		if cfg.Auth.Password != "userpass" {
+			t.Errorf("Auth.Password = %q, want userpass", cfg.Auth.Password)
+		}
+	})
+
+	t.Run("OIDC implicit with static token", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "auth.yaml")
+		content := strings.Join([]string{
+			"target: https://api.example.com",
+			"auth:",
+			"  type: oidc_implicit",
+			"  static_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test",
+		}, "\n")
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		loader := config.NewLoader()
+		cfg, err := loader.Load([]string{"--config", path})
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+
+		if cfg.Auth.Type != config.AuthTypeOIDCImplicit {
+			t.Errorf("Auth.Type = %q, want oidc_implicit", cfg.Auth.Type)
+		}
+		if cfg.Auth.StaticToken != "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test" {
+			t.Errorf("Auth.StaticToken mismatch")
+		}
+	})
+
+	t.Run("OIDC auth_code with static token", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "auth.json")
+		json := `{
+			"target": "https://api.example.com",
+			"auth": {
+				"type": "oidc_auth_code",
+				"static_token": "preconfigured-token-abc"
+			}
+		}`
+		if err := os.WriteFile(path, []byte(json), 0o600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		loader := config.NewLoader()
+		cfg, err := loader.Load([]string{"--config", path})
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+
+		if cfg.Auth.Type != config.AuthTypeOIDCAuthCode {
+			t.Errorf("Auth.Type = %q, want oidc_auth_code", cfg.Auth.Type)
+		}
+		if cfg.Auth.StaticToken != "preconfigured-token-abc" {
+			t.Errorf("Auth.StaticToken mismatch")
+		}
+	})
+}
+
+func TestValidateRejectsIncompleteAuth(t *testing.T) {
+	cases := []struct {
+		name string
+		auth config.AuthConfig
+		want []string
+	}{
+		{
+			name: "client_credentials missing token_url",
+			auth: config.AuthConfig{
+				Type:         config.AuthTypeOAuth2ClientCredentials,
+				ClientID:     "client",
+				ClientSecret: "secret",
+			},
+			want: []string{"token_url"},
+		},
+		{
+			name: "client_credentials missing client_id",
+			auth: config.AuthConfig{
+				Type:         config.AuthTypeOAuth2ClientCredentials,
+				TokenURL:     "https://idp.example.com/token",
+				ClientSecret: "secret",
+			},
+			want: []string{"client_id"},
+		},
+		{
+			name: "resource_owner missing username",
+			auth: config.AuthConfig{
+				Type:         config.AuthTypeOAuth2ResourceOwner,
+				TokenURL:     "https://idp.example.com/token",
+				ClientID:     "client",
+				ClientSecret: "secret",
+				Password:     "pass",
+			},
+			want: []string{"username"},
+		},
+		{
+			name: "resource_owner missing password",
+			auth: config.AuthConfig{
+				Type:         config.AuthTypeOAuth2ResourceOwner,
+				TokenURL:     "https://idp.example.com/token",
+				ClientID:     "client",
+				ClientSecret: "secret",
+				Username:     "user",
+			},
+			want: []string{"password"},
+		},
+		{
+			name: "oidc_implicit missing static_token",
+			auth: config.AuthConfig{
+				Type: config.AuthTypeOIDCImplicit,
+			},
+			want: []string{"static_token"},
+		},
+		{
+			name: "oidc_auth_code missing static_token",
+			auth: config.AuthConfig{
+				Type: config.AuthTypeOIDCAuthCode,
+			},
+			want: []string{"static_token"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := config.Config{
+				TargetURL: "https://api.example.com",
+				Auth:      tc.auth,
+			}
+			err := cfg.Validate()
+			if err == nil {
+				t.Fatalf("Validate() error = nil, want error")
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("Validate() error %q missing %q", err.Error(), want)
+				}
+			}
+		})
+	}
+}
+
+func TestCLIOverridesAuth(t *testing.T) {
+}
+
+func TestConfigParsesFeederBlocks(t *testing.T) {
+	t.Run("CSV feeder from YAML", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.yml")
+		content := strings.Join([]string{
+			"target: https://api.example.com/users/{{user_id}}",
+			"feeder:",
+			"  path: ./users.csv",
+			"  type: csv",
+		}, "\n")
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		loader := config.NewLoader()
+		cfg, err := loader.Load([]string{"--config", path})
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+
+		if cfg.Feeder.Path != "./users.csv" {
+			t.Errorf("Feeder.Path = %q, want ./users.csv", cfg.Feeder.Path)
+		}
+		if cfg.Feeder.Type != "csv" {
+			t.Errorf("Feeder.Type = %q, want csv", cfg.Feeder.Type)
+		}
+	})
+
+	t.Run("JSON feeder from JSON", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.json")
+		content := `{
+			"target": "https://api.example.com",
+			"feeder": {
+				"path": "./products.json",
+				"type": "json"
+			}
+		}`
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		loader := config.NewLoader()
+		cfg, err := loader.Load([]string{"--config", path})
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+
+		if cfg.Feeder.Path != "./products.json" {
+			t.Errorf("Feeder.Path = %q, want ./products.json", cfg.Feeder.Path)
+		}
+		if cfg.Feeder.Type != "json" {
+			t.Errorf("Feeder.Type = %q, want json", cfg.Feeder.Type)
+		}
+	})
+}
+
+func TestValidateRejectsInvalidFeeder(t *testing.T) {
+	t.Run("missing type", func(t *testing.T) {
+		cfg := &config.Config{
+			TargetURL:   "https://api.example.com",
+			Concurrency: 1,
+			Feeder: config.FeederConfig{
+				Path: "./data.csv",
+				Type: "",
+			},
+		}
+
+		err := cfg.Validate()
+		if err == nil {
+			t.Fatal("Validate() error = nil, want error for missing feeder type")
+		}
+
+		want := "feeder: type is required"
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Validate() error = %q, want substring %q", err.Error(), want)
+		}
+	})
+
+	t.Run("invalid type", func(t *testing.T) {
+		cfg := &config.Config{
+			TargetURL:   "https://api.example.com",
+			Concurrency: 1,
+			Feeder: config.FeederConfig{
+				Path: "./data.xml",
+				Type: "xml",
+			},
+		}
+
+		err := cfg.Validate()
+		if err == nil {
+			t.Fatal("Validate() error = nil, want error for invalid feeder type")
+		}
+
+		want := "feeder: type must be 'csv' or 'json'"
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Validate() error = %q, want substring %q", err.Error(), want)
+		}
+	})
+}
+
+func TestCLIOverridesFeeder(t *testing.T) {
+	t.Run("CLI feeder flags override config", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.yml")
+		content := strings.Join([]string{
+			"target: https://api.example.com",
+			"feeder:",
+			"  path: ./config-data.csv",
+			"  type: csv",
+		}, "\n")
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		loader := config.NewLoader()
+		cfg, err := loader.Load([]string{
+			"--config", path,
+			"--feeder-path", "./cli-data.json",
+			"--feeder-type", "json",
+		})
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+
+		if cfg.Feeder.Path != "./cli-data.json" {
+			t.Errorf("Feeder.Path = %q, want ./cli-data.json", cfg.Feeder.Path)
+		}
+		if cfg.Feeder.Type != "json" {
+			t.Errorf("Feeder.Type = %q, want json", cfg.Feeder.Type)
+		}
+	})
+}

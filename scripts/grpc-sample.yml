@@ -1,0 +1,34 @@
+# gRPC Load Testing Example
+#
+# ⚠️  SECURITY WARNING: This example has TLS disabled (insecure: true)
+# This should ONLY be used for local development/testing.
+# For production or Internet-facing services, set:
+#   tls: true
+#   insecure: false
+
+protocol: grpc
+target: localhost:50051
+
+# Connection and load settings
+concurrency: 20
+rate: 100
+duration: 2m
+
+# gRPC-specific configuration
+grpc:
+  service: "helloworld.Greeter"
+  method: "SayHello"
+  message: '{"name": "LoadTest"}'
+  timeout: 30s
+  tls: false  # ⚠️  LOCAL DEV ONLY - Use tls: true for production
+  insecure: true  # ⚠️  UNSAFE - Set to false for production
+  metadata:
+    authorization: "Bearer token123"
+    x-request-id: "loadtest-{{worker_id}}"
+
+# Optional: Add authentication
+# auth:
+#   type: oauth2_client_credentials
+#   token_url: https://auth.example.com/token
+#   client_id: grpc-client
+#   client_secret: secret123

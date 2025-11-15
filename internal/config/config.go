@@ -2,8 +2,18 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
+)
+
+type Protocol string
+
+const (
+	ProtocolHTTP      Protocol = "http"
+	ProtocolWebSocket Protocol = "websocket"
+	ProtocolSSE       Protocol = "sse"
+	ProtocolGRPC      Protocol = "grpc"
 )
 
 type Config struct {
@@ -25,6 +35,12 @@ type Config struct {
 	LoadPatterns []LoadPattern     `mapstructure:"load_patterns"`
 	Arrival      ArrivalConfig     `mapstructure:"arrival"`
 	Endpoints    []Endpoint        `mapstructure:"endpoints"`
+	Auth         AuthConfig        `mapstructure:"auth"`
+	Feeder       FeederConfig      `mapstructure:"feeder"`
+	Protocol     Protocol          `mapstructure:"protocol"`
+	WebSocket    WebSocketConfig   `mapstructure:"websocket"`
+	SSE          SSEConfig         `mapstructure:"sse"`
+	GRPC         GRPCConfig        `mapstructure:"grpc"`
 }
 
 type LoadPatternType string
@@ -72,6 +88,55 @@ type Endpoint struct {
 	BodyFile string            `mapstructure:"body_file"`
 }
 
+type FeederConfig struct {
+	Path string `mapstructure:"path"`
+	Type string `mapstructure:"type"` // "csv" or "json"
+}
+
+type WebSocketConfig struct {
+	Messages         []string      `mapstructure:"messages"`          // Messages to send
+	MessageInterval  time.Duration `mapstructure:"message_interval"`  // Interval between messages
+	ReceiveTimeout   time.Duration `mapstructure:"receive_timeout"`   // Timeout for receiving responses
+	HandshakeTimeout time.Duration `mapstructure:"handshake_timeout"` // WebSocket handshake timeout
+}
+
+type SSEConfig struct {
+	ReadTimeout time.Duration `mapstructure:"read_timeout"` // Timeout for reading events
+	MaxEvents   int           `mapstructure:"max_events"`   // Max events to read (0=unlimited)
+}
+
+type GRPCConfig struct {
+	ProtoFile string            `mapstructure:"proto_file"` // Path to .proto file
+	Service   string            `mapstructure:"service"`    // Service name (e.g., "helloworld.Greeter")
+	Method    string            `mapstructure:"method"`     // Method name (e.g., "SayHello")
+	Message   string            `mapstructure:"message"`    // JSON message payload (supports templates)
+	Metadata  map[string]string `mapstructure:"metadata"`   // gRPC metadata (headers)
+	Timeout   time.Duration     `mapstructure:"timeout"`    // Per-call timeout
+	TLS       bool              `mapstructure:"tls"`        // Use TLS
+	Insecure  bool              `mapstructure:"insecure"`   // Skip TLS verification
+}
+
+type AuthType string
+
+const (
+	AuthTypeOAuth2ClientCredentials AuthType = "oauth2_client_credentials"
+	AuthTypeOAuth2ResourceOwner     AuthType = "oauth2_resource_owner"
+	AuthTypeOIDCImplicit            AuthType = "oidc_implicit"
+	AuthTypeOIDCAuthCode            AuthType = "oidc_auth_code"
+)
+
+type AuthConfig struct {
+	Type                AuthType      `mapstructure:"type"`
+	TokenURL            string        `mapstructure:"token_url"`
+	ClientID            string        `mapstructure:"client_id"`
+	ClientSecret        string        `mapstructure:"client_secret"`
+	Username            string        `mapstructure:"username"`
+	Password            string        `mapstructure:"password"`
+	Scopes              []string      `mapstructure:"scopes"`
+	StaticToken         string        `mapstructure:"static_token"`
+	RefreshBeforeExpiry time.Duration `mapstructure:"refresh_before_expiry"`
+}
+
 type ValidationError struct {
 	issues []string
 }
@@ -89,6 +154,7 @@ func (e ValidationError) Issues() []string {
 
 func (c Config) Validate() error {
 	var issues []string
+	var warnings []string
 
 	if strings.TrimSpace(c.TargetURL) == "" {
 		targetSatisfied := false
@@ -106,6 +172,21 @@ func (c Config) Validate() error {
 		}
 		if !targetSatisfied {
 			issues = append(issues, "target is required (use --help for usage information)")
+		}
+	}
+
+	// Security warnings for high rate/concurrency
+	if c.Rate > 1000 {
+		warnings = append(warnings, fmt.Sprintf("WARNING: High rate limit configured (%d RPS). Ensure you have authorization to test the target system.", c.Rate))
+	}
+	if c.Concurrency > 500 {
+		warnings = append(warnings, fmt.Sprintf("WARNING: High concurrency configured (%d workers). Ensure you have authorization to test the target system.", c.Concurrency))
+	}
+
+	// Print warnings to stderr
+	if len(warnings) > 0 {
+		for _, w := range warnings {
+			fmt.Fprintln(os.Stderr, w)
 		}
 	}
 
@@ -147,6 +228,36 @@ func (c Config) Validate() error {
 	endpointIssues := validateEndpoints(c.Endpoints)
 	if len(endpointIssues) > 0 {
 		issues = append(issues, endpointIssues...)
+	}
+
+	authIssues := validateAuthConfig(c.Auth)
+	if len(authIssues) > 0 {
+		issues = append(issues, authIssues...)
+	}
+
+	// Security warnings for unsafe auth patterns
+	if c.Auth.Type == AuthTypeOAuth2ResourceOwner {
+		fmt.Fprintln(os.Stderr, "WARNING: oauth2_resource_owner (password grant) is a legacy flow and is NOT RECOMMENDED. Consider using oauth2_client_credentials or authorization code with PKCE instead.")
+	}
+	if c.Auth.Type == AuthTypeOIDCImplicit || c.Auth.Type == AuthTypeOIDCAuthCode {
+		if c.Auth.StaticToken != "" {
+			fmt.Fprintln(os.Stderr, "WARNING: Using static tokens increases security risk. Prefer short-lived tokens and avoid passing secrets via CLI flags.")
+		}
+	}
+
+	feederIssues := validateFeederConfig(c.Feeder)
+	if len(feederIssues) > 0 {
+		issues = append(issues, feederIssues...)
+	}
+
+	protocolIssues := validateProtocolConfig(c.Protocol, c.WebSocket, c.SSE, c.GRPC)
+	if len(protocolIssues) > 0 {
+		issues = append(issues, protocolIssues...)
+	}
+
+	// Security warning for insecure gRPC
+	if c.Protocol == ProtocolGRPC && c.GRPC.Insecure {
+		fmt.Fprintln(os.Stderr, "WARNING: gRPC TLS verification is DISABLED (insecure: true). This should ONLY be used in development/testing environments. Man-in-the-middle attacks are possible.")
 	}
 
 	if len(issues) > 0 {
@@ -231,5 +342,122 @@ func validateEndpoints(endpoints []Endpoint) []string {
 			}
 		}
 	}
+	return issues
+}
+
+func validateAuthConfig(auth AuthConfig) []string {
+	var issues []string
+	if auth.Type == "" {
+		return nil
+	}
+
+	switch auth.Type {
+	case AuthTypeOAuth2ClientCredentials:
+		if strings.TrimSpace(auth.TokenURL) == "" {
+			issues = append(issues, "auth: token_url is required for oauth2_client_credentials")
+		}
+		if strings.TrimSpace(auth.ClientID) == "" {
+			issues = append(issues, "auth: client_id is required for oauth2_client_credentials")
+		}
+		if strings.TrimSpace(auth.ClientSecret) == "" {
+			issues = append(issues, "auth: client_secret is required for oauth2_client_credentials")
+		}
+	case AuthTypeOAuth2ResourceOwner:
+		if strings.TrimSpace(auth.TokenURL) == "" {
+			issues = append(issues, "auth: token_url is required for oauth2_resource_owner")
+		}
+		if strings.TrimSpace(auth.ClientID) == "" {
+			issues = append(issues, "auth: client_id is required for oauth2_resource_owner")
+		}
+		if strings.TrimSpace(auth.ClientSecret) == "" {
+			issues = append(issues, "auth: client_secret is required for oauth2_resource_owner")
+		}
+		if strings.TrimSpace(auth.Username) == "" {
+			issues = append(issues, "auth: username is required for oauth2_resource_owner")
+		}
+		if strings.TrimSpace(auth.Password) == "" {
+			issues = append(issues, "auth: password is required for oauth2_resource_owner")
+		}
+	case AuthTypeOIDCImplicit:
+		if strings.TrimSpace(auth.StaticToken) == "" {
+			issues = append(issues, "auth: static_token is required for oidc_implicit")
+		}
+	case AuthTypeOIDCAuthCode:
+		if strings.TrimSpace(auth.StaticToken) == "" {
+			issues = append(issues, "auth: static_token is required for oidc_auth_code")
+		}
+	default:
+		issues = append(issues, fmt.Sprintf("auth: unsupported type %q", auth.Type))
+	}
+
+	return issues
+}
+
+func validateFeederConfig(feeder FeederConfig) []string {
+	var issues []string
+	if strings.TrimSpace(feeder.Path) == "" {
+		return nil // No feeder configured
+	}
+
+	if strings.TrimSpace(feeder.Type) == "" {
+		issues = append(issues, "feeder: type is required when path is specified")
+	} else if feeder.Type != "csv" && feeder.Type != "json" {
+		issues = append(issues, fmt.Sprintf("feeder: type must be 'csv' or 'json', got %q", feeder.Type))
+	}
+
+	return issues
+}
+
+func validateProtocolConfig(protocol Protocol, ws WebSocketConfig, sse SSEConfig, grpc GRPCConfig) []string {
+	var issues []string
+
+	// Default to HTTP if not specified
+	if protocol == "" {
+		return nil
+	}
+
+	// Validate protocol value
+	switch protocol {
+	case ProtocolHTTP, ProtocolWebSocket, ProtocolSSE, ProtocolGRPC:
+		// Valid protocols
+	default:
+		issues = append(issues, fmt.Sprintf("protocol: must be 'http', 'websocket', 'sse', or 'grpc', got %q", protocol))
+		return issues
+	}
+
+	// Protocol-specific validation
+	if protocol == ProtocolWebSocket {
+		if ws.MessageInterval < 0 {
+			issues = append(issues, "websocket: message_interval must be >= 0")
+		}
+		if ws.ReceiveTimeout < 0 {
+			issues = append(issues, "websocket: receive_timeout must be >= 0")
+		}
+		if ws.HandshakeTimeout < 0 {
+			issues = append(issues, "websocket: handshake_timeout must be >= 0")
+		}
+	}
+
+	if protocol == ProtocolSSE {
+		if sse.ReadTimeout < 0 {
+			issues = append(issues, "sse: read_timeout must be >= 0")
+		}
+		if sse.MaxEvents < 0 {
+			issues = append(issues, "sse: max_events must be >= 0")
+		}
+	}
+
+	if protocol == ProtocolGRPC {
+		if grpc.Service == "" {
+			issues = append(issues, "grpc: service is required")
+		}
+		if grpc.Method == "" {
+			issues = append(issues, "grpc: method is required")
+		}
+		if grpc.Timeout < 0 {
+			issues = append(issues, "grpc: timeout must be >= 0")
+		}
+	}
+
 	return issues
 }

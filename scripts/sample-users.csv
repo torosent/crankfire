@@ -1,0 +1,6 @@
+user_id,email,name,role
+101,alice@example.com,Alice Smith,admin
+102,bob@example.com,Bob Johnson,user
+103,charlie@example.com,Charlie Brown,user
+104,diana@example.com,Diana Prince,moderator
+105,eve@example.com,Eve Wilson,user

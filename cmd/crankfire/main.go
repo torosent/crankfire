@@ -22,6 +22,15 @@ import (
 	"github.com/torosent/crankfire/internal/runner"
 )
 
+// makeHeaders converts a map[string]string to http.Header
+func makeHeaders(headers map[string]string) http.Header {
+	h := make(http.Header)
+	for k, v := range headers {
+		h.Set(k, v)
+	}
+	return h
+}
+
 const (
 	progressInterval   = time.Second
 	maxLoggedBodyBytes = 1024
@@ -64,36 +73,52 @@ func run(args []string) error {
 		return err
 	}
 
-	builder, err := httpclient.NewRequestBuilder(cfg)
-	if err != nil {
-		return err
-	}
-
-	selector, err := newEndpointSelector(cfg)
-	if err != nil {
-		return err
-	}
-
-	client := httpclient.NewClient(cfg.Timeout)
 	collector := metrics.NewCollector()
 
-	requester := &httpRequester{
-		client:    client,
-		builder:   builder,
-		collector: collector,
-	}
+	// Create protocol-specific requester based on configuration
+	var baseRequester runner.Requester
+	switch cfg.Protocol {
+	case config.ProtocolWebSocket:
+		baseRequester = newWebSocketRequester(cfg, collector)
+	case config.ProtocolSSE:
+		baseRequester = newSSERequester(cfg, collector)
+	case config.ProtocolGRPC:
+		baseRequester = newGRPCRequester(cfg, collector)
+	case config.ProtocolHTTP:
+		fallthrough
+	default:
+		// HTTP protocol
+		builder, err := httpclient.NewRequestBuilder(cfg)
+		if err != nil {
+			return err
+		}
 
-	var wrapped runner.Requester = requester
-	if cfg.LogErrors {
-		wrapped = runner.WithLogging(wrapped, &stderrFailureLogger{})
-	}
+		selector, err := newEndpointSelector(cfg)
+		if err != nil {
+			return err
+		}
 
-	if cfg.Retries > 0 {
-		wrapped = runner.WithRetry(wrapped, newRetryPolicy(cfg.Retries))
-	}
+		client := httpclient.NewClient(cfg.Timeout)
+		httpReq := &httpRequester{
+			client:    client,
+			builder:   builder,
+			collector: collector,
+		}
 
-	if selector != nil {
-		wrapped = selector.Wrap(wrapped)
+		var wrapped runner.Requester = httpReq
+		if cfg.LogErrors {
+			wrapped = runner.WithLogging(wrapped, &stderrFailureLogger{})
+		}
+
+		if cfg.Retries > 0 {
+			wrapped = runner.WithRetry(wrapped, newRetryPolicy(cfg.Retries))
+		}
+
+		if selector != nil {
+			wrapped = selector.Wrap(wrapped)
+		}
+
+		baseRequester = wrapped
 	}
 
 	opts := runner.Options{
@@ -101,7 +126,7 @@ func run(args []string) error {
 		TotalRequests: cfg.Total,
 		Duration:      cfg.Duration,
 		RatePerSecond: cfg.Rate,
-		Requester:     wrapped,
+		Requester:     baseRequester,
 		ArrivalModel:  toRunnerArrivalModel(cfg.Arrival.Model),
 		LoadPatterns:  toRunnerLoadPatterns(cfg.LoadPatterns),
 	}

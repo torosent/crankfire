@@ -1,0 +1,33 @@
+target: https://api.example.com
+concurrency: 40
+load_patterns:
+  - name: warmup
+    type: ramp
+    from_rps: 10
+    to_rps: 400
+    duration: 5m
+  - name: soak
+    type: step
+    steps:
+      - rps: 400
+        duration: 10m
+      - rps: 600
+        duration: 10m
+  - name: spike
+    type: spike
+    rps: 1000
+    duration: 30s
+arrival:
+  model: poisson
+endpoints:
+  - name: list-users
+    weight: 60
+    path: /users
+  - name: user-detail
+    weight: 30
+    path: /users/{id}
+  - name: create-order
+    weight: 10
+    path: /orders
+    method: POST
+    body: '{"status":"pending"}'

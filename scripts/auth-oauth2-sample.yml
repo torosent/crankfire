@@ -1,0 +1,37 @@
+# Crankfire OAuth2 Client Credentials Sample Configuration
+#
+# This example demonstrates automated OAuth2 client credentials flow with
+# token refresh and automatic Authorization header injection.
+#
+# ⚠️  SECURITY WARNING: DO NOT commit real credentials to version control!
+# Use environment variables instead:
+#   export CRANKFIRE_AUTH_CLIENT_SECRET="your-real-secret"
+# Then omit client_secret from this file - it will be read from the environment.
+
+target: https://api.example.com/v1/data
+method: GET
+
+# OAuth2 client credentials configuration
+auth:
+  type: oauth2_client_credentials
+  token_url: https://idp.example.com/oauth/token
+  client_id: your-client-id
+  # client_secret: REMOVE THIS - use CRANKFIRE_AUTH_CLIENT_SECRET env var instead
+  client_secret: your-client-secret  # ⚠️  EXAMPLE ONLY - DO NOT USE REAL SECRETS HERE
+  scopes:
+    - api:read
+    - api:write
+  # Refresh tokens 30 seconds before expiry to ensure continuous authorization
+  refresh_before_expiry: 30s
+
+# Load test configuration
+concurrency: 20
+rate: 100
+duration: 5m
+timeout: 10s
+retries: 2
+
+# Additional headers (merged with auto-injected Authorization header)
+headers:
+  Accept: application/json
+  X-Client-Version: "1.0"

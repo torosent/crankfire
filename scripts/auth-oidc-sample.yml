@@ -1,0 +1,29 @@
+# Crankfire OIDC Static Token Sample Configuration
+#
+# This example uses a pre-configured OIDC token (from implicit or auth code flow)
+# and injects it automatically as an Authorization header.
+#
+# ⚠️  SECURITY WARNING: DO NOT commit real tokens to version control!
+# Use environment variables instead:
+#   export CRANKFIRE_AUTH_STATIC_TOKEN="your-real-token"
+# Then omit static_token from this file - it will be read from the environment.
+#
+# ⚠️  NOTE: OIDC implicit flow is discouraged. Prefer authorization code with PKCE.
+
+target: https://api.example.com/v1/protected
+method: GET
+
+# OIDC implicit flow with static token
+auth:
+  type: oidc_implicit
+  # static_token: REMOVE THIS - use CRANKFIRE_AUTH_STATIC_TOKEN env var instead
+  static_token: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImtleTEifQ.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyLCJleHAiOjE5MTYyMzkwMjJ9.example-signature  # ⚠️  EXAMPLE TOKEN ONLY
+
+# Load test configuration  
+concurrency: 15
+total: 5000
+timeout: 15s
+
+headers:
+  Accept: application/json
+  X-Request-Source: crankfire

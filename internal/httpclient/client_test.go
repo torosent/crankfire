@@ -100,7 +100,7 @@ func TestRequestBuilder_InvalidHeaderKey(t *testing.T) {
 	}
 	_, err := NewRequestBuilder(cfg)
 	if err == nil {
-			 t.Fatalf("expected error for empty header key")
+		t.Fatalf("expected error for empty header key")
 	}
 }
 
@@ -114,7 +114,7 @@ func TestRequestBuilder_InvalidHeaderKeyWithNewline(t *testing.T) {
 	}
 	_, err := NewRequestBuilder(cfg)
 	if err == nil {
-			 t.Fatalf("expected error for header key containing newline")
+		t.Fatalf("expected error for header key containing newline")
 	}
 }
 
@@ -179,13 +179,15 @@ func TestRequestBuilder_InvalidHeaderValueWithNewline(t *testing.T) {
 	}
 	_, err := NewRequestBuilder(cfg)
 	if err == nil {
-			 t.Fatalf("expected error for header value containing CR/LF")
+		t.Fatalf("expected error for header value containing CR/LF")
 	}
 }
 
 func TestRequestBuilder_HeadersWithLongValues(t *testing.T) {
 	long := make([]byte, 2048)
-	for i := range long { long[i] = 'a' }
+	for i := range long {
+		long[i] = 'a'
+	}
 	cfg := &config.Config{
 		Method:    "GET",
 		TargetURL: "http://example.com",
@@ -195,14 +197,14 @@ func TestRequestBuilder_HeadersWithLongValues(t *testing.T) {
 	}
 	b, err := NewRequestBuilder(cfg)
 	if err != nil {
-			 t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 	req, err := b.Build(context.Background())
 	if err != nil {
-			 t.Fatalf("build failed: %v", err)
+		t.Fatalf("build failed: %v", err)
 	}
 	if got := req.Header.Get("X-Long"); got != string(long) {
-			 t.Fatalf("long header value mismatch")
+		t.Fatalf("long header value mismatch")
 	}
 }
 
@@ -216,14 +218,14 @@ func TestRequestBuilder_EmptyHeaderValueAllowed(t *testing.T) {
 	}
 	b, err := NewRequestBuilder(cfg)
 	if err != nil {
-			 t.Fatalf("unexpected error: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
 	req, err := b.Build(context.Background())
 	if err != nil {
-			 t.Fatalf("build failed: %v", err)
+		t.Fatalf("build failed: %v", err)
 	}
 	if got := req.Header.Get("X-Empty"); got != "" {
-			 t.Fatalf("expected empty header value, got %q", got)
+		t.Fatalf("expected empty header value, got %q", got)
 	}
 }
 
@@ -316,4 +318,99 @@ func TestClientTimeoutApplied(t *testing.T) {
 	if transport.IdleConnTimeout == 0 {
 		t.Fatalf("expected transport to set idle connection timeout")
 	}
+}
+
+func TestRequestBuilderWithAuthProvider(t *testing.T) {
+	mockProvider := &mockAuthProvider{token: "test-auth-token"}
+
+	cfg := &config.Config{
+		TargetURL: "https://api.example.com/data",
+		Method:    "GET",
+	}
+
+	builder, err := NewRequestBuilderWithAuth(cfg, mockProvider)
+	if err != nil {
+		t.Fatalf("NewRequestBuilderWithAuth() error = %v", err)
+	}
+
+	ctx := context.Background()
+	req, err := builder.Build(ctx)
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	authHeader := req.Header.Get("Authorization")
+	expected := "Bearer test-auth-token"
+	if authHeader != expected {
+		t.Errorf("Authorization header = %q, want %q", authHeader, expected)
+	}
+
+	// Verify provider was called
+	if mockProvider.tokenCalls != 1 {
+		t.Errorf("Token() calls = %d, want 1", mockProvider.tokenCalls)
+	}
+}
+
+func TestRequestBuilderWithAuthProviderMultipleRequests(t *testing.T) {
+	mockProvider := &mockAuthProvider{token: "multi-request-token"}
+
+	cfg := &config.Config{
+		TargetURL: "https://api.example.com/users",
+		Method:    "POST",
+		Body:      `{"name":"test"}`,
+	}
+
+	builder, err := NewRequestBuilderWithAuth(cfg, mockProvider)
+	if err != nil {
+		t.Fatalf("NewRequestBuilderWithAuth() error = %v", err)
+	}
+
+	ctx := context.Background()
+
+	// Build multiple requests
+	for i := 0; i < 3; i++ {
+		req, err := builder.Build(ctx)
+		if err != nil {
+			t.Fatalf("Build() request %d error = %v", i, err)
+		}
+
+		authHeader := req.Header.Get("Authorization")
+		expected := "Bearer multi-request-token"
+		if authHeader != expected {
+			t.Errorf("Request %d Authorization header = %q, want %q", i, authHeader, expected)
+		}
+	}
+
+	// Verify provider was called for each request
+	if mockProvider.tokenCalls != 3 {
+		t.Errorf("Token() calls = %d, want 3", mockProvider.tokenCalls)
+	}
+}
+
+// mockAuthProvider simulates an auth provider for testing
+type mockAuthProvider struct {
+	token      string
+	tokenCalls int
+	tokenErr   error
+}
+
+func (m *mockAuthProvider) Token(ctx context.Context) (string, error) {
+	m.tokenCalls++
+	if m.tokenErr != nil {
+		return "", m.tokenErr
+	}
+	return m.token, nil
+}
+
+func (m *mockAuthProvider) InjectHeader(ctx context.Context, req *http.Request) error {
+	token, err := m.Token(ctx)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	return nil
+}
+
+func (m *mockAuthProvider) Close() error {
+	return nil
 }
