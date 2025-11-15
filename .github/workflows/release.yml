@@ -175,25 +175,26 @@ jobs:
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Compute checksums for Homebrew archives
+      - name: Compute checksums for platform binaries
         id: checksums
         run: |
           TAG="${{ steps.vars.outputs.tag }}"
           BASE_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}"
 
-          linux_amd64_url="${BASE_URL}/crankfire_linux_amd64.tar.gz"
-          darwin_amd64_url="${BASE_URL}/crankfire_darwin_amd64.tar.gz"
-          darwin_arm64_url="${BASE_URL}/crankfire_darwin_arm64.tar.gz"
+          # Download all platform binaries
+          curl -fL "${BASE_URL}/crankfire_linux_amd64.tar.gz" -o crankfire_linux_amd64.tar.gz
+          curl -fL "${BASE_URL}/crankfire_linux_arm64.tar.gz" -o crankfire_linux_arm64.tar.gz
+          curl -fL "${BASE_URL}/crankfire_darwin_amd64.tar.gz" -o crankfire_darwin_amd64.tar.gz
+          curl -fL "${BASE_URL}/crankfire_darwin_arm64.tar.gz" -o crankfire_darwin_arm64.tar.gz
 
-          for url in "$linux_amd64_url" "$darwin_amd64_url" "$darwin_arm64_url"; do
-            curl -fL "$url" -o "$(basename "$url")"
-          done
-
+          # Compute checksums
           linux_amd64_sha256=$(sha256sum crankfire_linux_amd64.tar.gz | awk '{print $1}')
+          linux_arm64_sha256=$(sha256sum crankfire_linux_arm64.tar.gz | awk '{print $1}')
           darwin_amd64_sha256=$(sha256sum crankfire_darwin_amd64.tar.gz | awk '{print $1}')
           darwin_arm64_sha256=$(sha256sum crankfire_darwin_arm64.tar.gz | awk '{print $1}')
 
           echo "linux_amd64_sha256=${linux_amd64_sha256}" >> "$GITHUB_OUTPUT"
+          echo "linux_arm64_sha256=${linux_arm64_sha256}" >> "$GITHUB_OUTPUT"
           echo "darwin_amd64_sha256=${darwin_amd64_sha256}" >> "$GITHUB_OUTPUT"
           echo "darwin_arm64_sha256=${darwin_arm64_sha256}" >> "$GITHUB_OUTPUT"
 
@@ -213,18 +214,24 @@ jobs:
 
           FORMULA="crankfire.rb"
 
-          linux_sha="${{ steps.checksums.outputs.linux_amd64_sha256 }}"
-          darwin_amd64_sha="${{ steps.checksums.outputs.darwin_amd64_sha256 }}"
-          darwin_arm64_sha="${{ steps.checksums.outputs.darwin_arm64_sha256 }}"
-
-          # Update version and URLs
-          sed -i "s|url \"https://github.com/torosent/crankfire/releases/download/.*/crankfire_\(.*\)_\(.*\).tar.gz\"|url \"https://github.com/torosent/crankfire/releases/download/${TAG}/crankfire_\1_\2.tar.gz\"|" "$FORMULA"
+          # Update version
           sed -i "s/^  version \".*\"/  version \"${VERSION}\"/" "$FORMULA"
 
-          # Update checksums (assuming per-OS blocks with sha256 lines)
-          sed -i "s/^  sha256 \".*\" # linux_amd64/  sha256 \"${linux_sha}\" # linux_amd64/" "$FORMULA"
-          sed -i "s/^  sha256 \".*\" # darwin_amd64/  sha256 \"${darwin_amd64_sha}\" # darwin_amd64/" "$FORMULA"
-          sed -i "s/^  sha256 \".*\" # darwin_arm64/  sha256 \"${darwin_arm64_sha}\" # darwin_arm64/" "$FORMULA"
+          # Update URLs for each platform
+          sed -i "s|url \"https://github.com/torosent/crankfire/releases/download/v.*/crankfire_linux_amd64\.tar\.gz\"|url \"https://github.com/torosent/crankfire/releases/download/${TAG}/crankfire_linux_amd64.tar.gz\"|" "$FORMULA"
+          sed -i "s|url \"https://github.com/torosent/crankfire/releases/download/v.*/crankfire_linux_arm64\.tar\.gz\"|url \"https://github.com/torosent/crankfire/releases/download/${TAG}/crankfire_linux_arm64.tar.gz\"|" "$FORMULA"
+          sed -i "s|url \"https://github.com/torosent/crankfire/releases/download/v.*/crankfire_darwin_amd64\.tar\.gz\"|url \"https://github.com/torosent/crankfire/releases/download/${TAG}/crankfire_darwin_amd64.tar.gz\"|" "$FORMULA"
+          sed -i "s|url \"https://github.com/torosent/crankfire/releases/download/v.*/crankfire_darwin_arm64\.tar\.gz\"|url \"https://github.com/torosent/crankfire/releases/download/${TAG}/crankfire_darwin_arm64.tar.gz\"|" "$FORMULA"
+
+          # Update checksums - match the exact lines with proper context
+          # For linux amd64 (after "on_linux" and "on_intel")
+          sed -i "/on_linux/,/on_intel/{s/sha256 \"[^\"]*\"/sha256 \"${{ steps.checksums.outputs.linux_amd64_sha256 }}\"/;}" "$FORMULA"
+          # For linux arm64 (after first on_arm in linux section)
+          sed -i "/on_linux/,/on_arm/{s/sha256 \"[^\"]*\"/sha256 \"${{ steps.checksums.outputs.linux_arm64_sha256 }}\"/;}" "$FORMULA"
+          # For darwin amd64 (after "on_macos" and "on_intel")
+          sed -i "/on_macos/,/on_intel/{s/sha256 \"[^\"]*\"/sha256 \"${{ steps.checksums.outputs.darwin_amd64_sha256 }}\"/;}" "$FORMULA"
+          # For darwin arm64 (after first on_arm in macos section)
+          sed -i "/on_macos/,/on_arm/{s/sha256 \"[^\"]*\"/sha256 \"${{ steps.checksums.outputs.darwin_arm64_sha256 }}\"/;}" "$FORMULA"
 
           git status
           if git diff --quiet; then
@@ -232,5 +239,5 @@ jobs:
             exit 0
           fi
 
-          git commit -am "crankfire ${VERSION}"
+          git commit -am "Update crankfire to ${VERSION}"
           git push origin main
