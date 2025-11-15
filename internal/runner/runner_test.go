@@ -37,9 +37,9 @@ func (f *fakeRequester) Do(ctx context.Context) error {
 func TestRunnerRespectsTotalRequests(t *testing.T) {
 	var calls int64
 	r := runner.New(runner.Options{
-		Concurrency: 4,
+		Concurrency:   4,
 		TotalRequests: 25,
-		Requester: &fakeRequester{latency: 1 * time.Millisecond, calls: &calls},
+		Requester:     &fakeRequester{latency: 1 * time.Millisecond, calls: &calls},
 	})
 	res := r.Run(context.Background())
 	if res.Total != 25 {
@@ -54,10 +54,10 @@ func TestRunnerRespectsTotalRequests(t *testing.T) {
 func TestRunnerHonorsDuration(t *testing.T) {
 	var calls int64
 	r := runner.New(runner.Options{
-		Concurrency: 10,
-		Duration: 50 * time.Millisecond,
+		Concurrency:   10,
+		Duration:      50 * time.Millisecond,
 		TotalRequests: 0,
-		Requester: &fakeRequester{latency: 5 * time.Millisecond, calls: &calls},
+		Requester:     &fakeRequester{latency: 5 * time.Millisecond, calls: &calls},
 	})
 	start := time.Now()
 	res := r.Run(context.Background())
@@ -94,5 +94,70 @@ func TestRateLimiterCapsThroughput(t *testing.T) {
 	}
 	if calls != res.Total {
 		t.Fatalf("calls mismatch: %d vs %d", calls, res.Total)
+	}
+}
+
+func TestRunnerStopsAfterPatternTimeline(t *testing.T) {
+	var calls int64
+	patterns := []runner.LoadPattern{
+		{
+			Type: runner.LoadPatternTypeStep,
+			Steps: []runner.LoadStep{
+				{RPS: 80, Duration: 80 * time.Millisecond},
+				{RPS: 160, Duration: 40 * time.Millisecond},
+			},
+		},
+	}
+	r := runner.New(runner.Options{
+		Concurrency:  8,
+		Requester:    &fakeRequester{latency: 0, calls: &calls},
+		LoadPatterns: patterns,
+	})
+	res := r.Run(context.Background())
+	if res.Duration < 100*time.Millisecond || res.Duration > 500*time.Millisecond {
+		t.Fatalf("expected duration to roughly match pattern timeline, got %s", res.Duration)
+	}
+	if res.Total == 0 {
+		t.Fatalf("expected some requests to execute")
+	}
+}
+
+func TestRunnerSpikePatternSetsHighRate(t *testing.T) {
+	var calls int64
+	patterns := []runner.LoadPattern{
+		{Type: runner.LoadPatternTypeSpike, RPS: 500, Duration: 50 * time.Millisecond},
+	}
+	r := runner.New(runner.Options{
+		Concurrency:  32,
+		Requester:    &fakeRequester{latency: 0, calls: &calls},
+		LoadPatterns: patterns,
+	})
+	res := r.Run(context.Background())
+	if res.Total < 10 {
+		t.Fatalf("expected spike to allow burst, total=%d", res.Total)
+	}
+}
+
+func TestRunnerPoissonArrivalUsesSampler(t *testing.T) {
+	var sampleCalls int64
+	samplers := func() float64 {
+		atomic.AddInt64(&sampleCalls, 1)
+		return 0
+	}
+	var calls int64
+	r := runner.New(runner.Options{
+		Concurrency:    2,
+		TotalRequests:  5,
+		RatePerSecond:  100,
+		Requester:      &fakeRequester{latency: 0, calls: &calls},
+		ArrivalModel:   runner.ArrivalModelPoisson,
+		PoissonSampler: samplers,
+	})
+	res := r.Run(context.Background())
+	if res.Total != 5 {
+		t.Fatalf("expected total 5, got %d", res.Total)
+	}
+	if atomic.LoadInt64(&sampleCalls) == 0 {
+		t.Fatalf("poisson sampler was never invoked")
 	}
 }

@@ -92,6 +92,53 @@ crankfire --target https://api.example.com --rate 50 --duration 30s
 crankfire --target https://api.example.com --rate 100 --duration 30s
 ```
 
+## Advanced Workload Modeling
+
+Describe coordinated phases, arrival distributions, and weighted endpoints in a single config file instead of scripting separate runs.
+
+```yaml
+target: https://api.example.com
+concurrency: 40
+load_patterns:
+  - name: warmup
+    type: ramp
+    from_rps: 20
+    to_rps: 400
+    duration: 5m
+  - name: soak
+    type: step
+    steps:
+      - rps: 400
+        duration: 8m
+      - rps: 600
+        duration: 4m
+  - name: spike
+    type: spike
+    rps: 1200
+    duration: 20s
+arrival:
+  model: poisson
+endpoints:
+  - name: list-users
+    weight: 60
+    path: /users
+  - name: user-detail
+    weight: 30
+    path: /users/{id}
+  - name: create-order
+    weight: 10
+    path: /orders
+    method: POST
+    body: '{"status":"new"}'
+```
+
+- **Load patterns**: `ramp`, `step`, and `spike` share a single timeline. Each step specifies its own duration; ramps interpolate between `from_rps` and `to_rps` across the provided duration.
+- **Arrival models**: Defaults to uniform pacing. Switch to Poisson globally with `arrival:
+  model: poisson` or `--arrival-model poisson` for more realistic inter-arrival gaps.
+- **Endpoints**: Define multiple endpoints with relative `weight` values. Each endpoint inherits the global target URL, method, headers, and body unless explicitly overridden.
+
+Endpoint weighting automatically feeds the collector. The JSON report, progress ticker, and dashboard expose per-endpoint totals, RPS, and latency percentiles so you can compare how each route behaves during the same run.
+
 ## Configuration Files
 
 ### JSON Configuration

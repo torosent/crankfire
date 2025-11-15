@@ -69,6 +69,11 @@ func run(args []string) error {
 		return err
 	}
 
+	selector, err := newEndpointSelector(cfg)
+	if err != nil {
+		return err
+	}
+
 	client := httpclient.NewClient(cfg.Timeout)
 	collector := metrics.NewCollector()
 
@@ -87,12 +92,18 @@ func run(args []string) error {
 		wrapped = runner.WithRetry(wrapped, newRetryPolicy(cfg.Retries))
 	}
 
+	if selector != nil {
+		wrapped = selector.Wrap(wrapped)
+	}
+
 	opts := runner.Options{
 		Concurrency:   cfg.Concurrency,
 		TotalRequests: cfg.Total,
 		Duration:      cfg.Duration,
 		RatePerSecond: cfg.Rate,
 		Requester:     wrapped,
+		ArrivalModel:  toRunnerArrivalModel(cfg.Arrival.Model),
+		LoadPatterns:  toRunnerLoadPatterns(cfg.LoadPatterns),
 	}
 
 	r := runner.New(opts)
@@ -120,6 +131,10 @@ func run(args []string) error {
 		}()
 	}
 
+	// Mark the actual start time in the collector for accurate RPS calculation.
+	// This ensures dashboard/progress reporters (which may have been created earlier)
+	// use the correct elapsed time since the test actually began.
+	collector.Start()
 	result := r.Run(ctx)
 	stats := collector.Stats(result.Duration)
 
@@ -143,16 +158,32 @@ func (r *httpRequester) Do(ctx context.Context) error {
 	}
 
 	start := time.Now()
-	req, err := r.builder.Build(ctx)
+	builder := r.builder
+	meta := &metrics.RequestMetadata{}
+	if tmpl := endpointFromContext(ctx); tmpl != nil {
+		if tmpl.builder != nil {
+			builder = tmpl.builder
+		}
+		meta.Endpoint = tmpl.name
+	}
+	if meta.Endpoint == "" {
+		meta = nil
+	}
+	if builder == nil {
+		err := fmt.Errorf("request builder is not configured")
+		r.collector.RecordRequest(time.Since(start), err, meta)
+		return err
+	}
+	req, err := builder.Build(ctx)
 	if err != nil {
-		r.collector.RecordRequest(time.Since(start), err)
+		r.collector.RecordRequest(time.Since(start), err, meta)
 		return err
 	}
 
 	resp, err := r.client.Do(req)
 	latency := time.Since(start)
 	if err != nil {
-		r.collector.RecordRequest(latency, err)
+		r.collector.RecordRequest(latency, err, meta)
 		return err
 	}
 	defer resp.Body.Close()
@@ -173,8 +204,50 @@ func (r *httpRequester) Do(ctx context.Context) error {
 		_, _ = io.Copy(io.Discard, resp.Body)
 	}
 
-	r.collector.RecordRequest(latency, resultErr)
+	r.collector.RecordRequest(latency, resultErr, meta)
 	return resultErr
+}
+
+func toRunnerArrivalModel(model config.ArrivalModel) runner.ArrivalModel {
+	switch strings.ToLower(string(model)) {
+	case string(config.ArrivalModelPoisson):
+		return runner.ArrivalModelPoisson
+	default:
+		return runner.ArrivalModelUniform
+	}
+}
+
+func toRunnerLoadPatterns(patterns []config.LoadPattern) []runner.LoadPattern {
+	if len(patterns) == 0 {
+		return nil
+	}
+	result := make([]runner.LoadPattern, len(patterns))
+	for i, p := range patterns {
+		result[i] = runner.LoadPattern{
+			Name:     p.Name,
+			Type:     runner.LoadPatternType(p.Type),
+			FromRPS:  p.FromRPS,
+			ToRPS:    p.ToRPS,
+			Duration: p.Duration,
+			Steps:    toRunnerLoadSteps(p.Steps),
+			RPS:      p.RPS,
+		}
+	}
+	return result
+}
+
+func toRunnerLoadSteps(steps []config.LoadStep) []runner.LoadStep {
+	if len(steps) == 0 {
+		return nil
+	}
+	result := make([]runner.LoadStep, len(steps))
+	for i, s := range steps {
+		result[i] = runner.LoadStep{
+			RPS:      s.RPS,
+			Duration: s.Duration,
+		}
+	}
+	return result
 }
 
 func (l *stderrFailureLogger) LogFailure(err error) {

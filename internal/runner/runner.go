@@ -16,12 +16,16 @@ type Result struct {
 
 // Runner coordinates concurrent execution with rate limiting.
 type Runner struct {
-	opt Options
+	opt     Options
+	plan    *patternPlan
+	arrival arrivalController
 }
 
 func New(opt Options) *Runner {
 	opt.normalize()
-	return &Runner{opt: opt}
+	plan := compilePatternPlan(opt.LoadPatterns)
+	arrival := newArrivalController(opt, plan)
+	return &Runner{opt: opt, plan: plan, arrival: arrival}
 }
 
 func (r *Runner) Run(ctx context.Context) Result {
@@ -33,13 +37,18 @@ func (r *Runner) Run(ctx context.Context) Result {
 	defer cancel()
 
 	if r.opt.Duration > 0 {
-		// Stop after duration elapses.
 		deadlineCtx, deadlineCancel := context.WithTimeout(ctx, r.opt.Duration)
 		ctx = deadlineCtx
 		defer deadlineCancel()
 	}
 
-	limiter := r.opt.LimiterFactory(r.opt.RatePerSecond)
+	var patternCancel context.CancelFunc
+	if r.plan != nil {
+		patternCtx, cancelPattern := context.WithCancel(ctx)
+		ctx = patternCtx
+		patternCancel = cancelPattern
+		go r.runPatternController(patternCtx, patternCancel)
+	}
 
 	permits := make(chan struct{}, r.opt.Concurrency)
 
@@ -54,8 +63,10 @@ func (r *Runner) Run(ctx context.Context) Result {
 			if r.opt.TotalRequests > 0 && current >= int64(r.opt.TotalRequests) {
 				return
 			}
-			if err := limiter.Wait(ctx); err != nil {
-				return
+			if r.arrival != nil {
+				if err := r.arrival.Wait(ctx); err != nil {
+					return
+				}
 			}
 			// Increment total before releasing permit so workers only execute allocated slots.
 			atomic.AddInt64(&total, 1)
@@ -91,5 +102,41 @@ func (r *Runner) Run(ctx context.Context) Result {
 		Total:    atomic.LoadInt64(&total),
 		Errors:   atomic.LoadInt64(&errs),
 		Duration: time.Since(start),
+	}
+}
+
+func (r *Runner) runPatternController(ctx context.Context, cancel context.CancelFunc) {
+	if r.plan == nil || r.arrival == nil {
+		if cancel != nil {
+			cancel()
+		}
+		return
+	}
+	defer func() {
+		if cancel != nil {
+			cancel()
+		}
+	}()
+
+	start := time.Now()
+	if initial, ok := r.plan.rateAt(0); ok {
+		r.arrival.SetRate(initial)
+	}
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			elapsed := time.Since(start)
+			rps, ok := r.plan.rateAt(elapsed)
+			if !ok {
+				return
+			}
+			r.arrival.SetRate(rps)
+		}
 	}
 }

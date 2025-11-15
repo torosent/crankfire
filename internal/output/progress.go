@@ -3,6 +3,7 @@ package output
 import (
 	"fmt"
 	"io"
+	"sort"
 	"sync/atomic"
 	"time"
 
@@ -55,10 +56,30 @@ func (p *ProgressReporter) run() {
 		case <-p.ticker.C:
 			elapsed := time.Since(p.start)
 			stats := p.collector.Stats(elapsed)
-			fmt.Fprintf(p.writer, "\rRequests: %d | Successes: %d | Failures: %d | RPS: %.1f",
+			line := fmt.Sprintf("\rRequests: %d | Successes: %d | Failures: %d | RPS: %.1f",
 				stats.Total, stats.Successes, stats.Failures, stats.RequestsPerSec)
+			if name, ep, ok := topEndpointSnapshot(stats); ok && stats.Total > 0 {
+				share := (float64(ep.Total) / float64(stats.Total)) * 100
+				line += fmt.Sprintf(" | Top Endpoint: %s (%.0f%%, P99 %.1fms)", name, share, ep.P99LatencyMs)
+			}
+			fmt.Fprint(p.writer, line)
 		case <-p.done:
 			return
 		}
 	}
+}
+
+func topEndpointSnapshot(stats metrics.Stats) (string, metrics.EndpointStats, bool) {
+	if len(stats.Endpoints) == 0 {
+		return "", metrics.EndpointStats{}, false
+	}
+	names := make([]string, 0, len(stats.Endpoints))
+	for name := range stats.Endpoints {
+		names = append(names, name)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		return stats.Endpoints[names[i]].Total > stats.Endpoints[names[j]].Total
+	})
+	name := names[0]
+	return name, stats.Endpoints[name], true
 }
