@@ -209,7 +209,7 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-          git clone "https://github.com/${TAP_REPO}.git"
+          git clone "https://${HOMEBREW_TAP_TOKEN}@github.com/${TAP_REPO}.git"
           cd homebrew-crankfire
 
           FORMULA="crankfire.rb"
