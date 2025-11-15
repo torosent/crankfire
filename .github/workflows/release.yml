@@ -200,7 +200,7 @@ jobs:
 
       - name: Update Homebrew formula
         env:
-          GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           set -euo pipefail
           TAG="${{ steps.vars.outputs.tag }}"
