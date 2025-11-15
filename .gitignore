@@ -28,7 +28,4 @@ go.work.sum
 # .idea/
 .vscode/
 build/
-# Allow plan tracking files
-!plans/
-!plans/*.md
 .DS_Store

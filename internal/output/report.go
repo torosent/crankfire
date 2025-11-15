@@ -77,6 +77,27 @@ func PrintReport(w io.Writer, stats metrics.Stats) {
 			)
 		}
 	}
+
+	if len(stats.ProtocolMetrics) > 0 {
+		fmt.Fprintln(w, "\nProtocol Metrics:")
+		protocols := make([]string, 0, len(stats.ProtocolMetrics))
+		for protocol := range stats.ProtocolMetrics {
+			protocols = append(protocols, protocol)
+		}
+		sort.Strings(protocols)
+		for _, protocol := range protocols {
+			metrics := stats.ProtocolMetrics[protocol]
+			fmt.Fprintf(w, "  %s:\n", protocol)
+			keys := make([]string, 0, len(metrics))
+			for key := range metrics {
+				keys = append(keys, key)
+			}
+			sort.Strings(keys)
+			for _, key := range keys {
+				fmt.Fprintf(w, "    %s: %v\n", key, metrics[key])
+			}
+		}
+	}
 }
 
 // PrintJSONReport outputs a JSON-formatted report.

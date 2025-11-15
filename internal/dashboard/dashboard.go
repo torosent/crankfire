@@ -30,6 +30,7 @@ type Dashboard struct {
 	endpointList   *widgets.List
 	summaryPara    *widgets.Paragraph
 	metricsPara    *widgets.Paragraph
+	protocolPara   *widgets.Paragraph
 	latencyHistory []float64
 	rpsHistory     []float64
 	errorBreakdown map[string]int
@@ -114,6 +115,13 @@ func (d *Dashboard) initWidgets() {
 	d.metricsPara.Text = "Waiting for data..."
 	d.metricsPara.BorderStyle.Fg = ui.ColorCyan
 
+	// Protocol Metrics Paragraph
+	d.protocolPara = widgets.NewParagraph()
+	d.protocolPara.Title = "Protocol Metrics"
+	d.protocolPara.Text = "No protocol data"
+	d.protocolPara.TextStyle = ui.NewStyle(ui.ColorGreen)
+	d.protocolPara.BorderStyle.Fg = ui.ColorCyan
+
 }
 
 // setupGrid configures the layout grid.
@@ -124,18 +132,21 @@ func (d *Dashboard) setupGrid() {
 	d.grid.SetRect(0, 0, termWidth, termHeight)
 
 	d.grid.Set(
-		ui.NewRow(0.16,
+		ui.NewRow(0.14,
 			ui.NewCol(1.0, d.summaryPara),
 		),
-		ui.NewRow(0.20,
+		ui.NewRow(0.18,
 			ui.NewCol(0.5, d.rpsGauge),
 			ui.NewCol(0.5, d.metricsPara),
 		),
-		ui.NewRow(0.30,
+		ui.NewRow(0.26,
 			ui.NewCol(0.65, d.latencySparkle),
 			ui.NewCol(0.35, d.latencyPara),
 		),
-		ui.NewRow(0.34,
+		ui.NewRow(0.14,
+			ui.NewCol(1.0, d.protocolPara),
+		),
+		ui.NewRow(0.28,
 			ui.NewCol(0.5, d.endpointList),
 			ui.NewCol(0.5, d.errorList),
 		),
@@ -292,6 +303,7 @@ func (d *Dashboard) update() {
 	}
 
 	d.updateEndpointList(stats)
+	d.updateProtocolMetrics(stats)
 }
 
 // render draws all widgets to the screen.
@@ -336,4 +348,74 @@ func (d *Dashboard) updateEndpointList(stats metrics.Stats) {
 		))
 	}
 	d.endpointList.Rows = formatted
+}
+
+func (d *Dashboard) updateProtocolMetrics(stats metrics.Stats) {
+	if len(stats.ProtocolMetrics) == 0 {
+		d.protocolPara.Text = "[No protocol-specific metrics](fg:green)"
+		return
+	}
+
+	// Sort protocols alphabetically
+	protocols := make([]string, 0, len(stats.ProtocolMetrics))
+	for protocol := range stats.ProtocolMetrics {
+		protocols = append(protocols, protocol)
+	}
+	sort.Strings(protocols)
+
+	// Build formatted output
+	lines := make([]string, 0)
+	for _, protocol := range protocols {
+		metrics := stats.ProtocolMetrics[protocol]
+		lines = append(lines, fmt.Sprintf("[%s:](fg:cyan,mod:bold)", protocol))
+
+		// Sort metric keys
+		keys := make([]string, 0, len(metrics))
+		for key := range metrics {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+
+		// Format metrics - limit to 4 per protocol to fit on screen
+		count := 0
+		for _, key := range keys {
+			if count >= 4 {
+				break
+			}
+			value := metrics[key]
+			lines = append(lines, fmt.Sprintf("  [%s:](fg:white) [%v](fg:yellow)", key, formatMetricValue(value)))
+			count++
+		}
+	}
+
+	d.protocolPara.Text = joinLines(lines)
+}
+
+func formatMetricValue(value interface{}) string {
+	switch v := value.(type) {
+	case int:
+		return fmt.Sprintf("%d", v)
+	case int64:
+		return fmt.Sprintf("%d", v)
+	case float64:
+		if v > 1000 {
+			return fmt.Sprintf("%.0f", v)
+		}
+		return fmt.Sprintf("%.2f", v)
+	case string:
+		return v
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}
+
+func joinLines(lines []string) string {
+	if len(lines) == 0 {
+		return ""
+	}
+	result := lines[0]
+	for i := 1; i < len(lines); i++ {
+		result += "\n" + lines[i]
+	}
+	return result
 }

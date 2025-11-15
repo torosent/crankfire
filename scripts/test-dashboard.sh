@@ -13,7 +13,7 @@ echo ""
 echo "Starting in 3 seconds..."
 sleep 3
 
-./crankfire --target https://httpbin.org/get --concurrency 5 --total 30 --dashboard
+./build/crankfire --target https://httpbin.org/get --concurrency 5 --total 30 --dashboard
 
 echo ""
 echo "Test completed! Check that:"

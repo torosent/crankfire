@@ -1,0 +1,15 @@
+{
+  "target": "https://api.example.com/products",
+  "method": "POST",
+  "concurrency": 5,
+  "rate": 20,
+  "duration": "30s",
+  "feeder": {
+    "path": "./sample-products.json",
+    "type": "json"
+  },
+  "headers": {
+    "Content-Type": "application/json"
+  },
+  "body": "{\"product_id\": \"{{product_id}}\", \"name\": \"{{name}}\", \"category\": \"{{category}}\", \"price\": {{price}}}"
+}

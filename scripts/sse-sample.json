@@ -1,0 +1,15 @@
+{
+  "protocol": "sse",
+  "target": "http://localhost:8080/events",
+  "concurrency": 20,
+  "rate": 100,
+  "duration": "2m",
+  "sse": {
+    "read_timeout": "30s",
+    "max_events": 100
+  },
+  "headers": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer token123"
+  }
+}

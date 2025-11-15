@@ -16,16 +16,19 @@ const (
 )
 
 type Collector struct {
-	mu        sync.Mutex
-	total     *statsBucket
-	endpoints map[string]*statsBucket
-	startTime time.Time
-	started   bool
+	mu            sync.Mutex
+	total         *statsBucket
+	endpoints     map[string]*statsBucket
+	customMetrics map[string]map[string]interface{} // protocol -> aggregated metrics
+	startTime     time.Time
+	started       bool
 }
 
 // RequestMetadata annotates a measurement with optional labels.
 type RequestMetadata struct {
-	Endpoint string
+	Endpoint      string
+	Protocol      string                 // Protocol used (http, websocket, sse)
+	CustomMetrics map[string]interface{} // Protocol-specific metrics
 }
 
 // EndpointStats represents aggregated metrics for a logical bucket (overall or per-endpoint).
@@ -54,16 +57,18 @@ type EndpointStats struct {
 // Stats represents aggregated metrics, including optional breakdowns.
 type Stats struct {
 	EndpointStats
-	Duration   time.Duration            `json:"-"`
-	DurationMs float64                  `json:"duration_ms"`
-	Endpoints  map[string]EndpointStats `json:"endpoints,omitempty"`
+	Duration        time.Duration                     `json:"-"`
+	DurationMs      float64                           `json:"duration_ms"`
+	Endpoints       map[string]EndpointStats          `json:"endpoints,omitempty"`
+	ProtocolMetrics map[string]map[string]interface{} `json:"protocol_metrics,omitempty"`
 }
 
 // NewCollector allocates a Collector.
 func NewCollector() *Collector {
 	return &Collector{
-		total:     newStatsBucket(),
-		endpoints: make(map[string]*statsBucket),
+		total:         newStatsBucket(),
+		endpoints:     make(map[string]*statsBucket),
+		customMetrics: make(map[string]map[string]interface{}),
 	}
 }
 
@@ -92,6 +97,16 @@ func (c *Collector) RecordRequest(latency time.Duration, err error, meta *Reques
 		}
 		bucket.record(latency, err)
 	}
+
+	// Aggregate CustomMetrics by protocol
+	if meta != nil && meta.Protocol != "" && len(meta.CustomMetrics) > 0 {
+		if c.customMetrics[meta.Protocol] == nil {
+			c.customMetrics[meta.Protocol] = make(map[string]interface{})
+		}
+		for key, value := range meta.CustomMetrics {
+			c.aggregateMetric(meta.Protocol, key, value)
+		}
+	}
 }
 
 // Stats computes and returns current aggregated statistics.
@@ -114,11 +129,18 @@ func (c *Collector) Stats(elapsed time.Duration) Stats {
 		endpointSnaps[name] = bucket.snapshot(actualElapsed)
 	}
 
+	// Copy protocol metrics
+	protocolMetrics := make(map[string]map[string]interface{}, len(c.customMetrics))
+	for protocol, metrics := range c.customMetrics {
+		protocolMetrics[protocol] = copyMetrics(metrics)
+	}
+
 	return Stats{
-		EndpointStats: summary,
-		Duration:      actualElapsed,
-		DurationMs:    float64(actualElapsed) / float64(time.Millisecond),
-		Endpoints:     endpointSnaps,
+		EndpointStats:   summary,
+		Duration:        actualElapsed,
+		DurationMs:      float64(actualElapsed) / float64(time.Millisecond),
+		Endpoints:       endpointSnaps,
+		ProtocolMetrics: protocolMetrics,
 	}
 }
 
@@ -226,6 +248,45 @@ func copyErrors(src map[string]int64) map[string]int {
 	result := make(map[string]int, len(src))
 	for k, v := range src {
 		result[k] = int(v)
+	}
+	return result
+}
+
+// aggregateMetric aggregates a custom metric value (assumes caller holds lock)
+func (c *Collector) aggregateMetric(protocol, key string, value interface{}) {
+	current := c.customMetrics[protocol][key]
+	switch v := value.(type) {
+	case int:
+		if existing, ok := current.(int); ok {
+			c.customMetrics[protocol][key] = existing + v
+		} else {
+			c.customMetrics[protocol][key] = v
+		}
+	case int64:
+		if existing, ok := current.(int64); ok {
+			c.customMetrics[protocol][key] = existing + v
+		} else {
+			c.customMetrics[protocol][key] = v
+		}
+	case float64:
+		if existing, ok := current.(float64); ok {
+			c.customMetrics[protocol][key] = existing + v
+		} else {
+			c.customMetrics[protocol][key] = v
+		}
+	default:
+		// For non-numeric types, just keep the latest value
+		c.customMetrics[protocol][key] = v
+	}
+}
+
+func copyMetrics(src map[string]interface{}) map[string]interface{} {
+	if len(src) == 0 {
+		return nil
+	}
+	result := make(map[string]interface{}, len(src))
+	for k, v := range src {
+		result[k] = v
 	}
 	return result
 }
