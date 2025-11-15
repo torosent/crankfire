@@ -1,0 +1,26 @@
+[
+  {
+    "product_id": "p1001",
+    "name": "Widget Pro",
+    "category": "electronics",
+    "price": "49.99"
+  },
+  {
+    "product_id": "p1002",
+    "name": "Gadget Plus",
+    "category": "electronics",
+    "price": "79.99"
+  },
+  {
+    "product_id": "p1003",
+    "name": "Tool Master",
+    "category": "hardware",
+    "price": "29.99"
+  },
+  {
+    "product_id": "p1004",
+    "name": "Smart Device",
+    "category": "electronics",
+    "price": "149.99"
+  }
+]

@@ -62,6 +62,12 @@ func (p *ProgressReporter) run() {
 				share := (float64(ep.Total) / float64(stats.Total)) * 100
 				line += fmt.Sprintf(" | Top Endpoint: %s (%.0f%%, P99 %.1fms)", name, share, ep.P99LatencyMs)
 			}
+			if len(stats.ProtocolMetrics) > 0 {
+				for protocol := range stats.ProtocolMetrics {
+					line += fmt.Sprintf(" | %s", protocol)
+					break // Only show first protocol to keep line concise
+				}
+			}
 			fmt.Fprint(p.writer, line)
 		case <-p.done:
 			return

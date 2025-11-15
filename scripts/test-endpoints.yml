@@ -1,0 +1,13 @@
+target: https://httpbin.org
+concurrency: 10
+total: 50
+endpoints:
+  - name: get-endpoint
+    weight: 50
+    path: /get
+  - name: status-endpoint
+    weight: 30
+    path: /status/200
+  - name: delay-endpoint
+    weight: 20
+    path: /delay/1

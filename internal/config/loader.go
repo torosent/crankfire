@@ -110,6 +110,25 @@ func configureFlags(flags *pflag.FlagSet) {
 	flags.Bool("dashboard", false, "Show live terminal dashboard with metrics")
 	flags.Bool("log-errors", false, "Log each failed request to stderr")
 	flags.String("config", "", "Path to configuration file (JSON or YAML)")
+
+	flags.String("feeder-path", "", "Path to CSV or JSON file containing data for per-request injection")
+	flags.String("feeder-type", "", "Type of feeder file: 'csv' or 'json'")
+
+	flags.String("protocol", "http", "Protocol mode: 'http', 'websocket', 'sse', or 'grpc'")
+	flags.StringSlice("ws-messages", nil, "WebSocket messages to send (repeatable)")
+	flags.Duration("ws-message-interval", 0, "Interval between WebSocket messages")
+	flags.Duration("ws-receive-timeout", 10*time.Second, "WebSocket receive timeout")
+	flags.Duration("ws-handshake-timeout", 30*time.Second, "WebSocket handshake timeout")
+	flags.Duration("sse-read-timeout", 30*time.Second, "SSE read timeout")
+	flags.Int("sse-max-events", 0, "Max SSE events to read (0=unlimited)")
+	flags.String("grpc-proto-file", "", "Path to .proto file for gRPC")
+	flags.String("grpc-service", "", "gRPC service name (e.g., helloworld.Greeter)")
+	flags.String("grpc-method", "", "gRPC method name (e.g., SayHello)")
+	flags.String("grpc-message", "", "gRPC message payload (JSON format)")
+	flags.StringToString("grpc-metadata", nil, "gRPC metadata key=value pairs")
+	flags.Duration("grpc-timeout", 30*time.Second, "gRPC per-call timeout")
+	flags.Bool("grpc-tls", false, "Use TLS for gRPC connection")
+	flags.Bool("grpc-insecure", false, "Skip TLS verification for gRPC")
 }
 
 func displayHelp(cmd *cobra.Command) {
@@ -278,6 +297,54 @@ func applyConfigSettings(cfg *Config, settings map[string]interface{}) error {
 		cfg.Endpoints = endpoints
 	}
 
+	if raw, ok := lookupSetting(settings, "auth"); ok {
+		auth, err := parseAuth(raw)
+		if err != nil {
+			return fmt.Errorf("auth: %w", err)
+		}
+		cfg.Auth = auth
+	}
+
+	if raw, ok := lookupSetting(settings, "feeder"); ok {
+		feeder, err := parseFeeder(raw)
+		if err != nil {
+			return fmt.Errorf("feeder: %w", err)
+		}
+		cfg.Feeder = feeder
+	}
+
+	if raw, ok := lookupSetting(settings, "protocol"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return fmt.Errorf("protocol: %w", err)
+		}
+		cfg.Protocol = Protocol(strings.ToLower(strings.TrimSpace(val)))
+	}
+
+	if raw, ok := lookupSetting(settings, "websocket"); ok {
+		ws, err := parseWebSocketConfig(raw)
+		if err != nil {
+			return fmt.Errorf("websocket: %w", err)
+		}
+		cfg.WebSocket = ws
+	}
+
+	if raw, ok := lookupSetting(settings, "sse"); ok {
+		sse, err := parseSSEConfig(raw)
+		if err != nil {
+			return fmt.Errorf("sse: %w", err)
+		}
+		cfg.SSE = sse
+	}
+
+	if raw, ok := lookupSetting(settings, "grpc"); ok {
+		grpc, err := parseGRPCConfig(raw)
+		if err != nil {
+			return fmt.Errorf("grpc: %w", err)
+		}
+		cfg.GRPC = grpc
+	}
+
 	return nil
 }
 
@@ -402,6 +469,127 @@ func applyFlagOverrides(cfg *Config, fs *pflag.FlagSet) error {
 			}
 			cfg.Headers[key] = strings.TrimSpace(parts[1])
 		}
+	}
+
+	if fs.Changed("feeder-path") {
+		val, err := fs.GetString("feeder-path")
+		if err != nil {
+			return err
+		}
+		cfg.Feeder.Path = strings.TrimSpace(val)
+	}
+	if fs.Changed("feeder-type") {
+		val, err := fs.GetString("feeder-type")
+		if err != nil {
+			return err
+		}
+		cfg.Feeder.Type = strings.TrimSpace(val)
+	}
+
+	if fs.Changed("protocol") {
+		val, err := fs.GetString("protocol")
+		if err != nil {
+			return err
+		}
+		cfg.Protocol = Protocol(strings.ToLower(strings.TrimSpace(val)))
+	}
+	if fs.Changed("ws-messages") {
+		val, err := fs.GetStringSlice("ws-messages")
+		if err != nil {
+			return err
+		}
+		cfg.WebSocket.Messages = val
+	}
+	if fs.Changed("ws-message-interval") {
+		val, err := fs.GetDuration("ws-message-interval")
+		if err != nil {
+			return err
+		}
+		cfg.WebSocket.MessageInterval = val
+	}
+	if fs.Changed("ws-receive-timeout") {
+		val, err := fs.GetDuration("ws-receive-timeout")
+		if err != nil {
+			return err
+		}
+		cfg.WebSocket.ReceiveTimeout = val
+	}
+	if fs.Changed("ws-handshake-timeout") {
+		val, err := fs.GetDuration("ws-handshake-timeout")
+		if err != nil {
+			return err
+		}
+		cfg.WebSocket.HandshakeTimeout = val
+	}
+	if fs.Changed("sse-read-timeout") {
+		val, err := fs.GetDuration("sse-read-timeout")
+		if err != nil {
+			return err
+		}
+		cfg.SSE.ReadTimeout = val
+	}
+	if fs.Changed("sse-max-events") {
+		val, err := fs.GetInt("sse-max-events")
+		if err != nil {
+			return err
+		}
+		cfg.SSE.MaxEvents = val
+	}
+	if fs.Changed("grpc-proto-file") {
+		val, err := fs.GetString("grpc-proto-file")
+		if err != nil {
+			return err
+		}
+		cfg.GRPC.ProtoFile = val
+	}
+	if fs.Changed("grpc-service") {
+		val, err := fs.GetString("grpc-service")
+		if err != nil {
+			return err
+		}
+		cfg.GRPC.Service = val
+	}
+	if fs.Changed("grpc-method") {
+		val, err := fs.GetString("grpc-method")
+		if err != nil {
+			return err
+		}
+		cfg.GRPC.Method = val
+	}
+	if fs.Changed("grpc-message") {
+		val, err := fs.GetString("grpc-message")
+		if err != nil {
+			return err
+		}
+		cfg.GRPC.Message = val
+	}
+	if fs.Changed("grpc-metadata") {
+		val, err := fs.GetStringToString("grpc-metadata")
+		if err != nil {
+			return err
+		}
+		cfg.GRPC.Metadata = val
+	}
+	if fs.Changed("grpc-timeout") {
+		val, err := fs.GetDuration("grpc-timeout")
+		if err != nil {
+			return err
+		}
+		cfg.GRPC.Timeout = val
+	}
+	if fs.Changed("grpc-tls") {
+		val, err := fs.GetBool("grpc-tls")
+		if err != nil {
+			return err
+		}
+		cfg.GRPC.TLS = val
+	}
+	if fs.Changed("grpc-insecure") {
+		val, err := fs.GetBool("grpc-insecure")
+		if err != nil {
+			return err
+		}
+		cfg.GRPC.Insecure = val
 	}
 
 	return nil
@@ -840,5 +1028,302 @@ func asStringMap(value interface{}) (map[string]string, error) {
 		return result, nil
 	default:
 		return nil, fmt.Errorf("unsupported headers type %T", value)
+	}
+}
+
+func parseAuth(value interface{}) (AuthConfig, error) {
+	if value == nil {
+		return AuthConfig{}, nil
+	}
+	entry, err := toStringKeyMap(value)
+	if err != nil {
+		return AuthConfig{}, err
+	}
+	return buildAuthConfig(entry)
+}
+
+func buildAuthConfig(settings map[string]interface{}) (AuthConfig, error) {
+	var auth AuthConfig
+	if raw, ok := lookupSetting(settings, "type"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return AuthConfig{}, fmt.Errorf("type: %w", err)
+		}
+		auth.Type = AuthType(strings.ToLower(strings.TrimSpace(val)))
+	}
+	if raw, ok := lookupSetting(settings, "tokenurl", "token_url", "token-url"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return AuthConfig{}, fmt.Errorf("token_url: %w", err)
+		}
+		auth.TokenURL = strings.TrimSpace(val)
+	}
+	if raw, ok := lookupSetting(settings, "clientid", "client_id", "client-id"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return AuthConfig{}, fmt.Errorf("client_id: %w", err)
+		}
+		auth.ClientID = strings.TrimSpace(val)
+	}
+	if raw, ok := lookupSetting(settings, "clientsecret", "client_secret", "client-secret"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return AuthConfig{}, fmt.Errorf("client_secret: %w", err)
+		}
+		auth.ClientSecret = strings.TrimSpace(val)
+	}
+	// Fallback to environment variable if client_secret is empty
+	if auth.ClientSecret == "" {
+		if envSecret := os.Getenv("CRANKFIRE_AUTH_CLIENT_SECRET"); envSecret != "" {
+			auth.ClientSecret = envSecret
+		}
+	}
+	if raw, ok := lookupSetting(settings, "username"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return AuthConfig{}, fmt.Errorf("username: %w", err)
+		}
+		auth.Username = strings.TrimSpace(val)
+	}
+	if raw, ok := lookupSetting(settings, "password"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return AuthConfig{}, fmt.Errorf("password: %w", err)
+		}
+		auth.Password = strings.TrimSpace(val)
+	}
+	// Fallback to environment variable if password is empty
+	if auth.Password == "" {
+		if envPassword := os.Getenv("CRANKFIRE_AUTH_PASSWORD"); envPassword != "" {
+			auth.Password = envPassword
+		}
+	}
+	if raw, ok := lookupSetting(settings, "scopes"); ok {
+		scopes, err := asStringSlice(raw)
+		if err != nil {
+			return AuthConfig{}, fmt.Errorf("scopes: %w", err)
+		}
+		auth.Scopes = scopes
+	}
+	if raw, ok := lookupSetting(settings, "statictoken", "static_token", "static-token"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return AuthConfig{}, fmt.Errorf("static_token: %w", err)
+		}
+		auth.StaticToken = strings.TrimSpace(val)
+	}
+	// Fallback to environment variable if static_token is empty
+	if auth.StaticToken == "" {
+		if envToken := os.Getenv("CRANKFIRE_AUTH_STATIC_TOKEN"); envToken != "" {
+			auth.StaticToken = envToken
+		}
+	}
+	if raw, ok := lookupSetting(settings, "refreshbeforeexpiry", "refresh_before_expiry", "refresh-before-expiry"); ok {
+		dur, err := asDuration(raw)
+		if err != nil {
+			return AuthConfig{}, fmt.Errorf("refresh_before_expiry: %w", err)
+		}
+		auth.RefreshBeforeExpiry = dur
+	}
+	return auth, nil
+}
+
+func parseFeeder(value interface{}) (FeederConfig, error) {
+	if value == nil {
+		return FeederConfig{}, nil
+	}
+	entry, err := toStringKeyMap(value)
+	if err != nil {
+		return FeederConfig{}, err
+	}
+	return buildFeederConfig(entry)
+}
+
+func buildFeederConfig(settings map[string]interface{}) (FeederConfig, error) {
+	var feeder FeederConfig
+	if raw, ok := lookupSetting(settings, "path"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return FeederConfig{}, fmt.Errorf("path: %w", err)
+		}
+		feeder.Path = strings.TrimSpace(val)
+	}
+	if raw, ok := lookupSetting(settings, "type"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return FeederConfig{}, fmt.Errorf("type: %w", err)
+		}
+		feeder.Type = strings.ToLower(strings.TrimSpace(val))
+	}
+	return feeder, nil
+}
+
+func parseWebSocketConfig(value interface{}) (WebSocketConfig, error) {
+	if value == nil {
+		return WebSocketConfig{}, nil
+	}
+	entry, err := toStringKeyMap(value)
+	if err != nil {
+		return WebSocketConfig{}, err
+	}
+	return buildWebSocketConfig(entry)
+}
+
+func buildWebSocketConfig(settings map[string]interface{}) (WebSocketConfig, error) {
+	var ws WebSocketConfig
+	if raw, ok := lookupSetting(settings, "messages"); ok {
+		messages, err := asStringSlice(raw)
+		if err != nil {
+			return WebSocketConfig{}, fmt.Errorf("messages: %w", err)
+		}
+		ws.Messages = messages
+	}
+	if raw, ok := lookupSetting(settings, "messageinterval", "message_interval", "message-interval"); ok {
+		dur, err := asDuration(raw)
+		if err != nil {
+			return WebSocketConfig{}, fmt.Errorf("message_interval: %w", err)
+		}
+		ws.MessageInterval = dur
+	}
+	if raw, ok := lookupSetting(settings, "receivetimeout", "receive_timeout", "receive-timeout"); ok {
+		dur, err := asDuration(raw)
+		if err != nil {
+			return WebSocketConfig{}, fmt.Errorf("receive_timeout: %w", err)
+		}
+		ws.ReceiveTimeout = dur
+	}
+	if raw, ok := lookupSetting(settings, "handshaketimeout", "handshake_timeout", "handshake-timeout"); ok {
+		dur, err := asDuration(raw)
+		if err != nil {
+			return WebSocketConfig{}, fmt.Errorf("handshake_timeout: %w", err)
+		}
+		ws.HandshakeTimeout = dur
+	}
+	return ws, nil
+}
+
+func parseSSEConfig(value interface{}) (SSEConfig, error) {
+	if value == nil {
+		return SSEConfig{}, nil
+	}
+	entry, err := toStringKeyMap(value)
+	if err != nil {
+		return SSEConfig{}, err
+	}
+	return buildSSEConfig(entry)
+}
+
+func buildSSEConfig(settings map[string]interface{}) (SSEConfig, error) {
+	var sse SSEConfig
+	if raw, ok := lookupSetting(settings, "readtimeout", "read_timeout", "read-timeout"); ok {
+		dur, err := asDuration(raw)
+		if err != nil {
+			return SSEConfig{}, fmt.Errorf("read_timeout: %w", err)
+		}
+		sse.ReadTimeout = dur
+	}
+	if raw, ok := lookupSetting(settings, "maxevents", "max_events", "max-events"); ok {
+		val, err := asInt(raw)
+		if err != nil {
+			return SSEConfig{}, fmt.Errorf("max_events: %w", err)
+		}
+		sse.MaxEvents = val
+	}
+	return sse, nil
+}
+
+func parseGRPCConfig(value interface{}) (GRPCConfig, error) {
+	if value == nil {
+		return GRPCConfig{}, nil
+	}
+	entry, err := toStringKeyMap(value)
+	if err != nil {
+		return GRPCConfig{}, err
+	}
+	return buildGRPCConfig(entry)
+}
+
+func buildGRPCConfig(settings map[string]interface{}) (GRPCConfig, error) {
+	var grpc GRPCConfig
+	if raw, ok := lookupSetting(settings, "protofile", "proto_file", "proto-file"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return GRPCConfig{}, fmt.Errorf("proto_file: %w", err)
+		}
+		grpc.ProtoFile = val
+	}
+	if raw, ok := lookupSetting(settings, "service"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return GRPCConfig{}, fmt.Errorf("service: %w", err)
+		}
+		grpc.Service = val
+	}
+	if raw, ok := lookupSetting(settings, "method"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return GRPCConfig{}, fmt.Errorf("method: %w", err)
+		}
+		grpc.Method = val
+	}
+	if raw, ok := lookupSetting(settings, "message"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return GRPCConfig{}, fmt.Errorf("message: %w", err)
+		}
+		grpc.Message = val
+	}
+	if raw, ok := lookupSetting(settings, "metadata"); ok {
+		val, err := asStringMap(raw)
+		if err != nil {
+			return GRPCConfig{}, fmt.Errorf("metadata: %w", err)
+		}
+		grpc.Metadata = val
+	}
+	if raw, ok := lookupSetting(settings, "timeout"); ok {
+		dur, err := asDuration(raw)
+		if err != nil {
+			return GRPCConfig{}, fmt.Errorf("timeout: %w", err)
+		}
+		grpc.Timeout = dur
+	}
+	if raw, ok := lookupSetting(settings, "tls"); ok {
+		val, err := asBool(raw)
+		if err != nil {
+			return GRPCConfig{}, fmt.Errorf("tls: %w", err)
+		}
+		grpc.TLS = val
+	}
+	if raw, ok := lookupSetting(settings, "insecure"); ok {
+		val, err := asBool(raw)
+		if err != nil {
+			return GRPCConfig{}, fmt.Errorf("insecure: %w", err)
+		}
+		grpc.Insecure = val
+	}
+	return grpc, nil
+}
+
+func asStringSlice(value interface{}) ([]string, error) {
+	if value == nil {
+		return nil, nil
+	}
+	switch v := value.(type) {
+	case []string:
+		return v, nil
+	case []interface{}:
+		result := make([]string, len(v))
+		for i, item := range v {
+			str, err := asString(item)
+			if err != nil {
+				return nil, fmt.Errorf("index %d: %w", i, err)
+			}
+			result[i] = str
+		}
+		return result, nil
+	case string:
+		return []string{v}, nil
+	default:
+		return nil, fmt.Errorf("unsupported string slice type %T", value)
 	}
 }

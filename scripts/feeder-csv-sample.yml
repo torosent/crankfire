@@ -1,0 +1,18 @@
+# Data Feeders Example
+# Test API with per-request data injection using CSV
+
+target: https://api.example.com/users/{{user_id}}
+method: GET
+concurrency: 10
+rate: 50
+duration: 10s
+
+# Configure feeder to load user data from CSV
+feeder:
+  path: ./sample-users.csv
+  type: csv
+
+# Headers can also use placeholders
+headers:
+  X-User-Email: "{{email}}"
+  Content-Type: application/json
