@@ -20,8 +20,11 @@ grpc:
   method: "SayHello"
   message: '{"name": "LoadTest"}'
   timeout: 30s
-  tls: false  # ⚠️  LOCAL DEV ONLY - Use tls: true for production
-  insecure: true  # ⚠️  UNSAFE - Set to false for production
+  tls: true  # ✅ SECURE DEFAULT - Use tls: false ONLY for local dev/testing
+  insecure: false  # ✅ SECURE DEFAULT - Set to true ONLY for local dev/testing
+  # For local development/testing, you may use the following INSECURE settings:
+  # tls: false  # ⚠️  LOCAL DEV ONLY - disables encryption
+  # insecure: true  # ⚠️  UNSAFE - disables certificate verification
   metadata:
     authorization: "Bearer token123"
     x-request-id: "loadtest-{{worker_id}}"

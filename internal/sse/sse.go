@@ -135,9 +135,7 @@ func (c *Client) ReadEvent(ctx context.Context) (Event, error) {
 			c.errors++
 			c.mu.Unlock()
 			if err == io.EOF {
-				c.mu.Lock()
-				c.errors++
-				c.mu.Unlock()
+
 				return Event{}, fmt.Errorf("connection closed")
 			}
 			return Event{}, fmt.Errorf("read line: %w", err)
