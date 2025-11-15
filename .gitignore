@@ -31,3 +31,4 @@ build/
 # Allow plan tracking files
 !plans/
 !plans/*.md
+.DS_Store

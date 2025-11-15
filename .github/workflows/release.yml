@@ -145,7 +145,92 @@ jobs:
         with:
           files: ${{ steps.package.outputs.asset_path }}
           token: ${{ secrets.GITHUB_TOKEN }}
-          name: ${{ steps.package.outputs.asset_name }}
+          name: ${{ needs.create-release.outputs.release_tag }}
           tag_name: ${{ needs.create-release.outputs.release_tag }}
           body: ""
           draft: false
+
+  homebrew:
+    name: Update Homebrew Tap
+    runs-on: ubuntu-latest
+    needs: create-release
+    if: startsWith(needs.create-release.outputs.release_tag, 'v')
+    env:
+      TAP_REPO: torosent/homebrew-crankfire
+    steps:
+      - name: Check required secrets
+        run: |
+          if [ -z "${GITHUB_TOKEN_FOR_TAP}" ]; then
+            echo "GITHUB_TOKEN_FOR_TAP secret is required to update Homebrew tap" >&2
+            exit 1
+          fi
+        env:
+          GITHUB_TOKEN_FOR_TAP: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Get release tag
+        id: vars
+        run: |
+          TAG="${{ needs.create-release.outputs.release_tag }}"
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute checksums for Homebrew archives
+        id: checksums
+        run: |
+          TAG="${{ steps.vars.outputs.tag }}"
+          BASE_URL="https://github.com/${{ github.repository }}/releases/download/${TAG}"
+
+          linux_amd64_url="${BASE_URL}/crankfire_linux_amd64.tar.gz"
+          darwin_amd64_url="${BASE_URL}/crankfire_darwin_amd64.tar.gz"
+          darwin_arm64_url="${BASE_URL}/crankfire_darwin_arm64.tar.gz"
+
+          for url in "$linux_amd64_url" "$darwin_amd64_url" "$darwin_arm64_url"; do
+            curl -fL "$url" -o "$(basename "$url")"
+          done
+
+          linux_amd64_sha256=$(sha256sum crankfire_linux_amd64.tar.gz | awk '{print $1}')
+          darwin_amd64_sha256=$(sha256sum crankfire_darwin_amd64.tar.gz | awk '{print $1}')
+          darwin_arm64_sha256=$(sha256sum crankfire_darwin_arm64.tar.gz | awk '{print $1}')
+
+          echo "linux_amd64_sha256=${linux_amd64_sha256}" >> "$GITHUB_OUTPUT"
+          echo "darwin_amd64_sha256=${darwin_amd64_sha256}" >> "$GITHUB_OUTPUT"
+          echo "darwin_arm64_sha256=${darwin_arm64_sha256}" >> "$GITHUB_OUTPUT"
+
+      - name: Update Homebrew formula
+        env:
+          GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.vars.outputs.tag }}"
+          VERSION="${{ steps.vars.outputs.version }}"
+
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          git clone "https://github.com/${TAP_REPO}.git"
+          cd homebrew-crankfire
+
+          FORMULA="crankfire.rb"
+
+          linux_sha="${{ steps.checksums.outputs.linux_amd64_sha256 }}"
+          darwin_amd64_sha="${{ steps.checksums.outputs.darwin_amd64_sha256 }}"
+          darwin_arm64_sha="${{ steps.checksums.outputs.darwin_arm64_sha256 }}"
+
+          # Update version and URLs
+          sed -i "" -e "s|url \"https://github.com/torosent/crankfire/releases/download/.*/crankfire_\"\\\(.*\\\)_\\\(.*\\\).tar.gz\"|url \"https://github.com/torosent/crankfire/releases/download/${TAG}/crankfire_\\1_\\2.tar.gz\"|" "$FORMULA"
+          sed -i "" -e "s/^  version \".*\"/  version \"${VERSION}\"/" "$FORMULA"
+
+          # Update checksums (assuming per-OS blocks with sha256 lines)
+          sed -i "" -e "s/^  sha256 \".*\" # linux_amd64/  sha256 \"${linux_sha}\" # linux_amd64/" "$FORMULA"
+          sed -i "" -e "s/^  sha256 \".*\" # darwin_amd64/  sha256 \"${darwin_amd64_sha}\" # darwin_amd64/" "$FORMULA"
+          sed -i "" -e "s/^  sha256 \".*\" # darwin_arm64/  sha256 \"${darwin_arm64_sha}\" # darwin_arm64/" "$FORMULA"
+
+          git status
+          if git diff --quiet; then
+            echo "No changes to commit in formula; skipping push."
+            exit 0
+          fi
+
+          git commit -am "crankfire ${VERSION}"
+          git push origin main

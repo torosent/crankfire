@@ -15,17 +15,28 @@ An optimized command-line load testing tool written in Go for HTTP endpoints.
 
 ## Installation
 
+### Homebrew (macOS and Linux)
+
+```bash
+brew tap torosent/crankfire
+brew install crankfire
+```
+
+### Go Install
+
 ```bash
 go install github.com/torosent/crankfire/cmd/crankfire@latest
 ```
 
-Or build from source:
+### Build from Source
 
 ```bash
 git clone https://github.com/torosent/crankfire.git
 cd crankfire
 go build -o build/crankfire ./cmd/crankfire
 ```
+
+For more installation options including Docker and pre-built binaries, see [INSTALLATION.md](docs/INSTALLATION.md).
 
 ## Quick Start
 
