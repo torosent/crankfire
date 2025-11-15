@@ -218,13 +218,13 @@ jobs:
           darwin_arm64_sha="${{ steps.checksums.outputs.darwin_arm64_sha256 }}"
 
           # Update version and URLs
-          sed -i "" -e "s|url \"https://github.com/torosent/crankfire/releases/download/.*/crankfire_\"\\\(.*\\\)_\\\(.*\\\).tar.gz\"|url \"https://github.com/torosent/crankfire/releases/download/${TAG}/crankfire_\\1_\\2.tar.gz\"|" "$FORMULA"
-          sed -i "" -e "s/^  version \".*\"/  version \"${VERSION}\"/" "$FORMULA"
+          sed -i "s|url \"https://github.com/torosent/crankfire/releases/download/.*/crankfire_\(.*\)_\(.*\).tar.gz\"|url \"https://github.com/torosent/crankfire/releases/download/${TAG}/crankfire_\1_\2.tar.gz\"|" "$FORMULA"
+          sed -i "s/^  version \".*\"/  version \"${VERSION}\"/" "$FORMULA"
 
           # Update checksums (assuming per-OS blocks with sha256 lines)
-          sed -i "" -e "s/^  sha256 \".*\" # linux_amd64/  sha256 \"${linux_sha}\" # linux_amd64/" "$FORMULA"
-          sed -i "" -e "s/^  sha256 \".*\" # darwin_amd64/  sha256 \"${darwin_amd64_sha}\" # darwin_amd64/" "$FORMULA"
-          sed -i "" -e "s/^  sha256 \".*\" # darwin_arm64/  sha256 \"${darwin_arm64_sha}\" # darwin_arm64/" "$FORMULA"
+          sed -i "s/^  sha256 \".*\" # linux_amd64/  sha256 \"${linux_sha}\" # linux_amd64/" "$FORMULA"
+          sed -i "s/^  sha256 \".*\" # darwin_amd64/  sha256 \"${darwin_amd64_sha}\" # darwin_amd64/" "$FORMULA"
+          sed -i "s/^  sha256 \".*\" # darwin_arm64/  sha256 \"${darwin_arm64_sha}\" # darwin_arm64/" "$FORMULA"
 
           git status
           if git diff --quiet; then
