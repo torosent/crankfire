@@ -9,6 +9,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BUILD_DIR="$PROJECT_ROOT/build"
 CRANKFIRE="$BUILD_DIR/crankfire"
+DOC_SAMPLES_ROOT="$(cd "$SCRIPT_DIR/doc-samples" && pwd)"
+
+source "$SCRIPT_DIR/doc_samples_helpers.sh"
 
 # Color output
 RED='\033[0;31m'
@@ -215,6 +218,70 @@ test_retries() {
     validate_json_output "$output" "Retries" || true
 }
 
+run_doc_sample_http_config() {
+    local sample_path="$1"
+    local test_name="$2"
+    shift 2
+
+    local config_path
+    config_path=$(prepare_doc_sample_config "$sample_path" "$@")
+    local config_name
+    config_name=$(basename "$config_path")
+
+    local output
+    if ! output=$( (cd "$DOC_SAMPLES_ROOT" && "$CRANKFIRE" \
+        --config "$config_name" \
+        --json-output \
+        --concurrency 2 \
+        --duration 5s \
+        --total 3 \
+        --rate 0) 2>/dev/null ); then
+        log_error "$test_name: crankfire execution failed"
+        rm -f "$config_path"
+        return 1
+    fi
+
+    rm -f "$config_path"
+    validate_json_output "$output" "$test_name"
+}
+
+test_doc_samples_http() {
+    log_info "Test 7: Doc-sample HTTP scenarios"
+
+    local http_port
+    http_port=$(find_free_port)
+    local http_pid
+    if ! http_pid=$(start_doc_sample_http_server "$http_port"); then
+        log_error "Failed to start HTTP doc-sample server"
+        return 1
+    fi
+    local base_url="http://127.0.0.1:${http_port}"
+
+    local failures=0
+
+    run_doc_sample_http_config "$DOC_SAMPLES_ROOT/loadtest.yaml" "Doc sample: loadtest.yaml" \
+        "https://api.example.com" "$base_url" || failures=$((failures + 1))
+
+    run_doc_sample_http_config "$DOC_SAMPLES_ROOT/loadtest.json" "Doc sample: loadtest.json" \
+        "https://api.example.com" "$base_url" || failures=$((failures + 1))
+
+    run_doc_sample_http_config "$DOC_SAMPLES_ROOT/feeder-test.yml" "Doc sample: feeder-test" \
+        "https://api.example.com" "$base_url" || failures=$((failures + 1))
+
+    run_doc_sample_http_config "$DOC_SAMPLES_ROOT/auth-feeder-test.yml" "Doc sample: auth-feeder-test" \
+        "https://api.example.com" "$base_url" \
+        "https://idp.example.com" "$base_url" || failures=$((failures + 1))
+
+    kill "$http_pid" 2>/dev/null || true
+
+    if [ "$failures" -ne 0 ]; then
+        log_error "Doc-sample HTTP scenarios: ${failures} failure(s)"
+        return 1
+    fi
+    log_info "Doc-sample HTTP scenarios completed"
+    return 0
+}
+
 run_all_tests() {
     log_info "Starting Crankfire integration tests..."
     echo ""
@@ -237,6 +304,9 @@ run_all_tests() {
     echo ""
     
     test_retries || ((failed++))
+    echo ""
+
+    test_doc_samples_http || ((failed++))
     echo ""
     
     if [ "$failed" -eq 0 ]; then
