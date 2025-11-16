@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/torosent/crankfire/internal/auth"
 	"github.com/torosent/crankfire/internal/config"
 	"github.com/torosent/crankfire/internal/dashboard"
 	"github.com/torosent/crankfire/internal/httpclient"
@@ -74,22 +75,38 @@ func run(args []string) error {
 		return err
 	}
 
+	authProvider, err := buildAuthProvider(cfg)
+	if err != nil {
+		return err
+	}
+	if authProvider != nil {
+		defer authProvider.Close()
+	}
+
+	dataFeeder, err := buildDataFeeder(cfg)
+	if err != nil {
+		return err
+	}
+	if dataFeeder != nil {
+		defer dataFeeder.Close()
+	}
+
 	collector := metrics.NewCollector()
 
 	// Create protocol-specific requester based on configuration
 	var baseRequester runner.Requester
 	switch cfg.Protocol {
 	case config.ProtocolWebSocket:
-		baseRequester = newWebSocketRequester(cfg, collector)
+		baseRequester = newWebSocketRequester(cfg, collector, authProvider, dataFeeder)
 	case config.ProtocolSSE:
-		baseRequester = newSSERequester(cfg, collector)
+		baseRequester = newSSERequester(cfg, collector, authProvider, dataFeeder)
 	case config.ProtocolGRPC:
-		baseRequester = newGRPCRequester(cfg, collector)
+		baseRequester = newGRPCRequester(cfg, collector, authProvider, dataFeeder)
 	case config.ProtocolHTTP:
 		fallthrough
 	default:
 		// HTTP protocol
-		builder, err := httpclient.NewRequestBuilder(cfg)
+		builder, err := newHTTPRequestBuilder(cfg, authProvider, dataFeeder)
 		if err != nil {
 			return err
 		}
@@ -247,6 +264,19 @@ func httpStatusCodeFromError(err error) string {
 		return strconv.Itoa(httpErr.StatusCode)
 	}
 	return fallbackStatusCode(err)
+}
+
+func newHTTPRequestBuilder(cfg *config.Config, provider auth.Provider, feeder httpclient.Feeder) (*httpclient.RequestBuilder, error) {
+	switch {
+	case provider != nil && feeder != nil:
+		return httpclient.NewRequestBuilderWithAuthAndFeeder(cfg, provider, feeder)
+	case provider != nil:
+		return httpclient.NewRequestBuilderWithAuth(cfg, provider)
+	case feeder != nil:
+		return httpclient.NewRequestBuilderWithFeeder(cfg, feeder)
+	default:
+		return httpclient.NewRequestBuilder(cfg)
+	}
 }
 
 func toRunnerArrivalModel(model config.ArrivalModel) runner.ArrivalModel {

@@ -29,3 +29,4 @@ go.work.sum
 .vscode/
 build/
 .DS_Store
+tmp.*

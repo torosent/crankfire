@@ -1,0 +1,11 @@
+target: https://api.example.com/v1/users
+method: POST
+headers:
+  Content-Type: application/json
+  Authorization: Bearer your-token-here
+body: '{"name":"John Doe","email":"john@example.com"}'
+concurrency: 30
+rate: 75
+duration: 5m
+timeout: 15s
+retries: 3

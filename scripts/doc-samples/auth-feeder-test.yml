@@ -1,0 +1,21 @@
+target: https://api.example.com/users/{{user_id}}/profile
+method: GET
+concurrency: 25
+rate: 100
+duration: 5m
+
+auth:
+  type: oauth2_client_credentials
+  token_url: https://idp.example.com/oauth/token
+  client_id: api-client
+  client_secret: secret123
+  scopes:
+    - users:read
+
+feeder:
+  path: ./users.csv
+  type: csv
+
+headers:
+  X-User-Department: "{{department}}"
+  X-User-Role: "{{role}}"

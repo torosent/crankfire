@@ -1,0 +1,22 @@
+protocol: grpc
+target: localhost:50051
+concurrency: 15
+rate: 50
+duration: 1m
+
+grpc:
+  proto_file: ./users.proto
+  service: users.UserService
+  method: UpdateUser
+  message: |
+    {
+      "user_id": "{{user_id}}",
+      "email": "{{email}}",
+      "role": "{{role}}",
+      "updated_at": "2024-01-15T10:00:00Z"
+    }
+  timeout: 10s
+
+feeder:
+  path: ./users.csv
+  type: csv

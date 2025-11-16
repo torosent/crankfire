@@ -1,0 +1,53 @@
+protocol: grpc
+target: orders.example.com:50051
+concurrency: 40
+
+load_patterns:
+  - name: warmup
+    type: ramp
+    from_rps: 10
+    to_rps: 100
+    duration: 2m
+  - name: steady
+    type: step
+    steps:
+      - rps: 100
+        duration: 5m
+  - name: spike
+    type: spike
+    rps: 500
+    duration: 30s
+
+auth:
+  type: oauth2_client_credentials
+  token_url: https://idp.example.com/oauth/token
+  client_id: orders-service
+  client_secret: secret789
+  scopes:
+    - orders:create
+  refresh_before_expiry: 60s
+
+grpc:
+  proto_file: ./api/orders.proto
+  service: orders.OrderService
+  method: CreateOrder
+  message: |
+    {
+      "order_id": "{{order_id}}",
+      "customer_id": "{{customer_id}}",
+      "amount": {{amount}},
+      "items_count": {{items}},
+      "timestamp": "{{timestamp}}"
+    }
+  timeout: 10s
+  tls: true
+  insecure: false
+  metadata:
+    x-trace-id: "load-{{order_id}}"
+
+feeder:
+  path: ./orders.csv
+  type: csv
+
+arrival:
+  model: poisson

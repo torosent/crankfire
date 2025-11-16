@@ -6,7 +6,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/torosent/crankfire/internal/auth"
 	"github.com/torosent/crankfire/internal/config"
+	"github.com/torosent/crankfire/internal/httpclient"
 	"github.com/torosent/crankfire/internal/metrics"
 	"github.com/torosent/crankfire/internal/sse"
 )
@@ -16,14 +18,18 @@ type sseRequester struct {
 	target    string
 	headers   map[string]string
 	collector *metrics.Collector
+	auth      auth.Provider
+	feeder    httpclient.Feeder
 }
 
-func newSSERequester(cfg *config.Config, collector *metrics.Collector) *sseRequester {
+func newSSERequester(cfg *config.Config, collector *metrics.Collector, provider auth.Provider, feeder httpclient.Feeder) *sseRequester {
 	return &sseRequester{
 		cfg:       &cfg.SSE,
 		target:    cfg.TargetURL,
 		headers:   cfg.Headers,
 		collector: collector,
+		auth:      provider,
+		feeder:    feeder,
 	}
 }
 
@@ -35,10 +41,30 @@ func (s *sseRequester) Do(ctx context.Context) error {
 	start := time.Now()
 	meta := &metrics.RequestMetadata{Protocol: "sse"}
 
+	record, err := nextFeederRecord(ctx, s.feeder)
+	if err != nil {
+		meta := annotateStatus(meta, "sse", fallbackStatusCode(err))
+		s.collector.RecordRequest(time.Since(start), err, meta)
+		return fmt.Errorf("sse feeder: %w", err)
+	}
+
+	target := s.target
+	if len(record) > 0 {
+		target = applyPlaceholders(target, record)
+	}
+
+	headerMap := applyPlaceholdersToMap(s.headers, record)
+	requestHeaders := makeHeaders(headerMap)
+	if err := ensureAuthHeader(ctx, s.auth, requestHeaders); err != nil {
+		meta := annotateStatus(meta, "sse", fallbackStatusCode(err))
+		s.collector.RecordRequest(time.Since(start), err, meta)
+		return fmt.Errorf("sse auth header: %w", err)
+	}
+
 	// Create SSE client config
 	sseCfg := sse.Config{
-		URL:     s.target,
-		Headers: makeHeaders(s.headers),
+		URL:     target,
+		Headers: requestHeaders,
 		Timeout: s.cfg.ReadTimeout,
 	}
 

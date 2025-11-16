@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package users;
+
+service UserService {
+  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse);
+}
+
+message UpdateUserRequest {
+  string user_id = 1;
+  string email = 2;
+  string role = 3;
+  string updated_at = 4;
+}
+
+message UpdateUserResponse {
+  bool ok = 1;
+}
