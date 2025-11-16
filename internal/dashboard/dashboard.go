@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,7 +34,6 @@ type Dashboard struct {
 	protocolPara   *widgets.Paragraph
 	latencyHistory []float64
 	rpsHistory     []float64
-	errorBreakdown map[string]int
 	lastUpdateTime time.Time
 	startTime      time.Time
 }
@@ -52,7 +52,6 @@ func New(collector *metrics.Collector) (*Dashboard, error) {
 		cancel:         cancel,
 		latencyHistory: make([]float64, 0, 100),
 		rpsHistory:     make([]float64, 0, 100),
-		errorBreakdown: make(map[string]int),
 		startTime:      time.Now(),
 		lastUpdateTime: time.Now(),
 	}
@@ -89,10 +88,10 @@ func (d *Dashboard) initWidgets() {
 	d.rpsGauge.BorderStyle.Fg = ui.ColorCyan
 	d.rpsGauge.LabelStyle = ui.NewStyle(ui.ColorWhite)
 
-	// Error List
+	// Status Bucket List
 	d.errorList = widgets.NewList()
-	d.errorList.Title = "Error Breakdown"
-	d.errorList.Rows = []string{"No errors"}
+	d.errorList.Title = "Status Buckets"
+	d.errorList.Rows = []string{"No failures"}
 	d.errorList.TextStyle = ui.NewStyle(ui.ColorYellow)
 	d.errorList.BorderStyle.Fg = ui.ColorCyan
 
@@ -275,32 +274,7 @@ func (d *Dashboard) update() {
 		stats.P99LatencyMs,
 	)
 
-	if len(stats.Errors) == 0 {
-		d.errorList.Rows = []string{"[No errors](fg:green)"}
-	} else {
-		type errorRow struct {
-			label string
-			count int
-		}
-		rows := make([]errorRow, 0, len(stats.Errors))
-		for errType, count := range stats.Errors {
-			rows = append(rows, errorRow{
-				label: metrics.FriendlyErrorName(errType),
-				count: count,
-			})
-		}
-		sort.Slice(rows, func(i, j int) bool {
-			if rows[i].count == rows[j].count {
-				return rows[i].label < rows[j].label
-			}
-			return rows[i].count > rows[j].count
-		})
-		formatted := make([]string, 0, len(rows))
-		for _, row := range rows {
-			formatted = append(formatted, fmt.Sprintf("[%s](fg:red) %d", row.label, row.count))
-		}
-		d.errorList.Rows = formatted
-	}
+	d.errorList.Rows = formatStatusListRows(stats.StatusBuckets)
 
 	d.updateEndpointList(stats)
 	d.updateProtocolMetrics(stats)
@@ -339,12 +313,19 @@ func (d *Dashboard) updateEndpointList(stats metrics.Stats) {
 		if stats.Total > 0 {
 			share = (float64(entry.stat.Total) / float64(stats.Total)) * 100
 		}
-		formatted = append(formatted, fmt.Sprintf("[%s](fg:cyan) | %5.1f%% | RPS %5.1f | P99 %5.1fms | Err %d",
+		statusSummary := summarizeStatusBuckets(entry.stat.StatusBuckets, 2)
+		if statusSummary == "" {
+			statusSummary = "Status n/a"
+		} else {
+			statusSummary = "Status " + statusSummary
+		}
+		formatted = append(formatted, fmt.Sprintf("[%s](fg:cyan) | %5.1f%% | RPS %5.1f | P99 %5.1fms | Err %d | %s",
 			entry.name,
 			share,
 			entry.stat.RequestsPerSec,
 			entry.stat.P99LatencyMs,
 			entry.stat.Failures,
+			statusSummary,
 		))
 	}
 	d.endpointList.Rows = formatted
@@ -418,4 +399,36 @@ func joinLines(lines []string) string {
 		result += "\n" + lines[i]
 	}
 	return result
+}
+
+func formatStatusListRows(buckets map[string]map[string]int) []string {
+	rows := metrics.FlattenStatusBuckets(buckets)
+	if len(rows) == 0 {
+		return []string{"[No failures](fg:green)"}
+	}
+	maxRows := len(rows)
+	if maxRows > 10 {
+		maxRows = 10
+	}
+	formatted := make([]string, 0, maxRows)
+	for i := 0; i < maxRows; i++ {
+		row := rows[i]
+		formatted = append(formatted, fmt.Sprintf("[%s %s](fg:red) %d", strings.ToUpper(row.Protocol), row.Code, row.Count))
+	}
+	return formatted
+}
+
+func summarizeStatusBuckets(buckets map[string]map[string]int, limit int) string {
+	rows := metrics.FlattenStatusBuckets(buckets)
+	if len(rows) == 0 {
+		return ""
+	}
+	if limit > 0 && len(rows) > limit {
+		rows = rows[:limit]
+	}
+	parts := make([]string, 0, len(rows))
+	for _, row := range rows {
+		parts = append(parts, fmt.Sprintf("%s %s x%d", strings.ToUpper(row.Protocol), row.Code, row.Count))
+	}
+	return strings.Join(parts, ", ")
 }

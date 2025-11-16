@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -184,23 +185,22 @@ func (r *httpRequester) Do(ctx context.Context) error {
 
 	start := time.Now()
 	builder := r.builder
-	meta := &metrics.RequestMetadata{}
+	meta := &metrics.RequestMetadata{Protocol: "http"}
 	if tmpl := endpointFromContext(ctx); tmpl != nil {
 		if tmpl.builder != nil {
 			builder = tmpl.builder
 		}
 		meta.Endpoint = tmpl.name
 	}
-	if meta.Endpoint == "" {
-		meta = nil
-	}
 	if builder == nil {
 		err := fmt.Errorf("request builder is not configured")
+		meta = annotateStatus(meta, "http", fallbackStatusCode(err))
 		r.collector.RecordRequest(time.Since(start), err, meta)
 		return err
 	}
 	req, err := builder.Build(ctx)
 	if err != nil {
+		meta = annotateStatus(meta, "http", fallbackStatusCode(err))
 		r.collector.RecordRequest(time.Since(start), err, meta)
 		return err
 	}
@@ -208,6 +208,7 @@ func (r *httpRequester) Do(ctx context.Context) error {
 	resp, err := r.client.Do(req)
 	latency := time.Since(start)
 	if err != nil {
+		meta = annotateStatus(meta, "http", fallbackStatusCode(err))
 		r.collector.RecordRequest(latency, err, meta)
 		return err
 	}
@@ -225,12 +226,27 @@ func (r *httpRequester) Do(ctx context.Context) error {
 			}
 		}
 		_, _ = io.Copy(io.Discard, resp.Body)
+		meta = annotateStatus(meta, "http", strconv.Itoa(resp.StatusCode))
 	} else {
 		_, _ = io.Copy(io.Discard, resp.Body)
 	}
 
+	if resultErr != nil && meta.StatusCode == "" {
+		meta = annotateStatus(meta, "http", httpStatusCodeFromError(resultErr))
+	}
 	r.collector.RecordRequest(latency, resultErr, meta)
 	return resultErr
+}
+
+func httpStatusCodeFromError(err error) string {
+	if err == nil {
+		return ""
+	}
+	var httpErr *runner.HTTPError
+	if errors.As(err, &httpErr) && httpErr.StatusCode > 0 {
+		return strconv.Itoa(httpErr.StatusCode)
+	}
+	return fallbackStatusCode(err)
 }
 
 func toRunnerArrivalModel(model config.ArrivalModel) runner.ArrivalModel {

@@ -1,7 +1,6 @@
 package metrics
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -27,7 +26,8 @@ type Collector struct {
 // RequestMetadata annotates a measurement with optional labels.
 type RequestMetadata struct {
 	Endpoint      string
-	Protocol      string                 // Protocol used (http, websocket, sse)
+	Protocol      string                 // Protocol used (http, websocket, sse, grpc)
+	StatusCode    string                 // Exact status/close code for failures
 	CustomMetrics map[string]interface{} // Protocol-specific metrics
 }
 
@@ -45,13 +45,13 @@ type EndpointStats struct {
 	RequestsPerSec float64       `json:"requests_per_sec"`
 
 	// JSON-friendly millisecond fields.
-	MinLatencyMs  float64        `json:"min_latency_ms"`
-	MaxLatencyMs  float64        `json:"max_latency_ms"`
-	MeanLatencyMs float64        `json:"mean_latency_ms"`
-	P50LatencyMs  float64        `json:"p50_latency_ms"`
-	P90LatencyMs  float64        `json:"p90_latency_ms"`
-	P99LatencyMs  float64        `json:"p99_latency_ms"`
-	Errors        map[string]int `json:"errors,omitempty"`
+	MinLatencyMs  float64                   `json:"min_latency_ms"`
+	MaxLatencyMs  float64                   `json:"max_latency_ms"`
+	MeanLatencyMs float64                   `json:"mean_latency_ms"`
+	P50LatencyMs  float64                   `json:"p50_latency_ms"`
+	P90LatencyMs  float64                   `json:"p90_latency_ms"`
+	P99LatencyMs  float64                   `json:"p99_latency_ms"`
+	StatusBuckets map[string]map[string]int `json:"status_buckets,omitempty"`
 }
 
 // Stats represents aggregated metrics, including optional breakdowns.
@@ -88,23 +88,34 @@ func (c *Collector) RecordRequest(latency time.Duration, err error, meta *Reques
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.total.record(latency, err)
-	if meta != nil && meta.Endpoint != "" {
-		bucket, ok := c.endpoints[meta.Endpoint]
+	var endpoint string
+	var protocol string
+	var statusCode string
+	var customMetrics map[string]interface{}
+	if meta != nil {
+		endpoint = meta.Endpoint
+		protocol = meta.Protocol
+		statusCode = meta.StatusCode
+		customMetrics = meta.CustomMetrics
+	}
+
+	c.total.record(latency, err, protocol, statusCode)
+	if endpoint != "" {
+		bucket, ok := c.endpoints[endpoint]
 		if !ok {
 			bucket = newStatsBucket()
-			c.endpoints[meta.Endpoint] = bucket
+			c.endpoints[endpoint] = bucket
 		}
-		bucket.record(latency, err)
+		bucket.record(latency, err, protocol, statusCode)
 	}
 
 	// Aggregate CustomMetrics by protocol
-	if meta != nil && meta.Protocol != "" && len(meta.CustomMetrics) > 0 {
-		if c.customMetrics[meta.Protocol] == nil {
-			c.customMetrics[meta.Protocol] = make(map[string]interface{})
+	if protocol != "" && len(customMetrics) > 0 {
+		if c.customMetrics[protocol] == nil {
+			c.customMetrics[protocol] = make(map[string]interface{})
 		}
-		for key, value := range meta.CustomMetrics {
-			c.aggregateMetric(meta.Protocol, key, value)
+		for key, value := range customMetrics {
+			c.aggregateMetric(protocol, key, value)
 		}
 	}
 }
@@ -144,31 +155,23 @@ func (c *Collector) Stats(elapsed time.Duration) Stats {
 	}
 }
 
-// GetErrorBreakdown returns a map of error types to their counts.
-func (c *Collector) GetErrorBreakdown() map[string]int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return copyErrors(c.total.errorsByType)
-}
-
 type statsBucket struct {
-	hist         *hdrhistogram.Histogram
-	successes    int64
-	failures     int64
-	minLatency   time.Duration
-	maxLatency   time.Duration
-	sumLatency   time.Duration
-	errorsByType map[string]int64
+	hist          *hdrhistogram.Histogram
+	successes     int64
+	failures      int64
+	minLatency    time.Duration
+	maxLatency    time.Duration
+	sumLatency    time.Duration
+	statusBuckets map[string]map[string]int64
 }
 
 func newStatsBucket() *statsBucket {
 	return &statsBucket{
-		hist:         hdrhistogram.New(1, 60_000_000, 3),
-		errorsByType: make(map[string]int64),
+		hist: hdrhistogram.New(1, 60_000_000, 3),
 	}
 }
 
-func (b *statsBucket) record(latency time.Duration, err error) {
+func (b *statsBucket) record(latency time.Duration, err error, protocol, statusCode string) {
 	if latency > 0 {
 		us := latency.Microseconds()
 		if us < b.hist.LowestTrackableValue() {
@@ -193,11 +196,9 @@ func (b *statsBucket) record(latency time.Duration, err error) {
 		return
 	}
 	b.failures++
-	errorType := fmt.Sprintf("%T", err)
-	if len(errorType) > 30 {
-		errorType = errorType[len(errorType)-30:]
+	if protocol != "" && statusCode != "" {
+		b.recordStatus(protocol, statusCode)
 	}
-	b.errorsByType[errorType]++
 }
 
 func (b *statsBucket) snapshot(elapsed time.Duration) EndpointStats {
@@ -234,20 +235,40 @@ func (b *statsBucket) snapshot(elapsed time.Duration) EndpointStats {
 		stats.RequestsPerSec = float64(total) / elapsedSeconds
 	}
 
-	if len(b.errorsByType) > 0 {
-		stats.Errors = copyErrors(b.errorsByType)
+	if len(b.statusBuckets) > 0 {
+		stats.StatusBuckets = copyStatusBuckets(b.statusBuckets)
 	}
 
 	return stats
 }
 
-func copyErrors(src map[string]int64) map[string]int {
+func (b *statsBucket) recordStatus(protocol, statusCode string) {
+	if b.statusBuckets == nil {
+		b.statusBuckets = make(map[string]map[string]int64)
+	}
+	if b.statusBuckets[protocol] == nil {
+		b.statusBuckets[protocol] = make(map[string]int64)
+	}
+	b.statusBuckets[protocol][statusCode]++
+}
+
+func copyStatusBuckets(src map[string]map[string]int64) map[string]map[string]int {
 	if len(src) == 0 {
 		return nil
 	}
-	result := make(map[string]int, len(src))
-	for k, v := range src {
-		result[k] = int(v)
+	result := make(map[string]map[string]int, len(src))
+	for protocol, buckets := range src {
+		if len(buckets) == 0 {
+			continue
+		}
+		copied := make(map[string]int, len(buckets))
+		for status, count := range buckets {
+			copied[status] = int(count)
+		}
+		result[protocol] = copied
+	}
+	if len(result) == 0 {
+		return nil
 	}
 	return result
 }

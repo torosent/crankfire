@@ -711,7 +711,7 @@ Output includes:
 - `messages_received`: Total messages received
 - `bytes_sent`: Total bytes transmitted
 - `bytes_received`: Total bytes received
-- `errors`: Connection and message errors
+- `status_buckets`: Protocol-specific status codes for failures
 
 ## Server-Sent Events (SSE) Testing
 
@@ -812,7 +812,7 @@ Output includes:
 - `connection_duration_ms`: Streaming duration per connection
 - `events_received`: Total SSE events received
 - `bytes_received`: Total data streamed
-- `errors`: Connection and read errors
+- `status_buckets`: Protocol-specific status codes for failures
 
 ### SSE Event Filtering
 
@@ -970,7 +970,7 @@ The auth token is automatically injected into gRPC metadata as `authorization: B
 gRPC tests track:
 - **Calls**: Total gRPC calls made
 - **Responses**: Successful responses received
-- **Errors**: Call failures, timeouts, and status codes
+- **Status Codes**: gRPC status codes for failures (e.g., UNAVAILABLE, DEADLINE_EXCEEDED)
 - **Latency**: Per-call latency distribution
 
 Example JSON output:
@@ -993,11 +993,15 @@ Output includes protocol metrics:
   "total": 100,
   "successes": 98,
   "failures": 2,
+  "status_buckets": {
+    "grpc": {
+      "UNAVAILABLE": 2
+    }
+  },
   "protocol_metrics": {
     "grpc": {
       "calls": 100,
-      "responses": 98,
-      "errors": 2
+      "responses": 98
     }
   }
 }

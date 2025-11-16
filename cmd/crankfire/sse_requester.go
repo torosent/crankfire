@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/torosent/crankfire/internal/config"
@@ -32,6 +33,7 @@ func (s *sseRequester) Do(ctx context.Context) error {
 	}
 
 	start := time.Now()
+	meta := &metrics.RequestMetadata{Protocol: "sse"}
 
 	// Create SSE client config
 	sseCfg := sse.Config{
@@ -44,7 +46,8 @@ func (s *sseRequester) Do(ctx context.Context) error {
 
 	// Connect to SSE endpoint
 	if err := client.Connect(ctx); err != nil {
-		s.collector.RecordRequest(time.Since(start), err, nil)
+		meta = annotateStatus(meta, "sse", sseStatusCode(err))
+		s.collector.RecordRequest(time.Since(start), err, meta)
 		return fmt.Errorf("sse connect: %w", err)
 	}
 	defer client.Close()
@@ -71,7 +74,8 @@ func (s *sseRequester) Do(ctx context.Context) error {
 				break
 			}
 			// Other errors are failures
-			s.collector.RecordRequest(time.Since(start), err, nil)
+			meta = annotateStatus(meta, "sse", fallbackStatusCode(err))
+			s.collector.RecordRequest(time.Since(start), err, meta)
 			return fmt.Errorf("read event: %w", err)
 		}
 		eventsRead++
@@ -86,15 +90,22 @@ func (s *sseRequester) Do(ctx context.Context) error {
 	latency := time.Since(start)
 
 	// Record as successful request with SSE-specific metadata
-	meta := &metrics.RequestMetadata{
-		Protocol: "sse",
-		CustomMetrics: map[string]interface{}{
-			"connection_duration_ms": sseMetrics.ConnectionDuration.Milliseconds(),
-			"events_received":        sseMetrics.EventsReceived,
-			"bytes_received":         sseMetrics.BytesReceived,
-		},
+	meta.CustomMetrics = map[string]interface{}{
+		"connection_duration_ms": sseMetrics.ConnectionDuration.Milliseconds(),
+		"events_received":        sseMetrics.EventsReceived,
+		"bytes_received":         sseMetrics.BytesReceived,
 	}
 
 	s.collector.RecordRequest(latency, nil, meta)
 	return nil
+}
+
+func sseStatusCode(err error) string {
+	if err == nil {
+		return ""
+	}
+	if statusErr, ok := err.(*sse.StatusError); ok {
+		return strconv.Itoa(statusErr.Code)
+	}
+	return fallbackStatusCode(err)
 }
