@@ -115,8 +115,6 @@ func (p *OAuth2ClientCredentialsProvider) Token(ctx context.Context) (string, er
 func (p *OAuth2ClientCredentialsProvider) fetchToken(ctx context.Context) (string, int, error) {
 	data := url.Values{}
 	data.Set("grant_type", "client_credentials")
-	data.Set("client_id", p.clientID)
-	data.Set("client_secret", p.clientSecret)
 	if len(p.scopes) > 0 {
 		data.Set("scope", strings.Join(p.scopes, " "))
 	}
@@ -126,6 +124,7 @@ func (p *OAuth2ClientCredentialsProvider) fetchToken(ctx context.Context) (strin
 		return "", 0, fmt.Errorf("failed to create token request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth(p.clientID, p.clientSecret)
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
@@ -237,8 +236,6 @@ func (p *OAuth2ResourceOwnerProvider) Token(ctx context.Context) (string, error)
 func (p *OAuth2ResourceOwnerProvider) fetchToken(ctx context.Context) (string, int, error) {
 	data := url.Values{}
 	data.Set("grant_type", "password")
-	data.Set("client_id", p.clientID)
-	data.Set("client_secret", p.clientSecret)
 	data.Set("username", p.username)
 	data.Set("password", p.password)
 	if len(p.scopes) > 0 {
@@ -250,6 +247,7 @@ func (p *OAuth2ResourceOwnerProvider) fetchToken(ctx context.Context) (string, i
 		return "", 0, fmt.Errorf("failed to create token request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth(p.clientID, p.clientSecret)
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {

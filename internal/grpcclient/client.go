@@ -2,6 +2,7 @@ package grpcclient
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"sync"
 	"time"
@@ -81,15 +82,18 @@ func (c *Client) Connect(ctx context.Context) error {
 	var opts []grpc.DialOption
 	if c.useTLS {
 		if c.insecure {
-			opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
+			// Use TLS but skip certificate verification
+			creds := credentials.NewTLS(&tls.Config{InsecureSkipVerify: true})
+			opts = append(opts, grpc.WithTransportCredentials(creds))
 		} else {
-			creds := credentials.NewTLS(nil)
+			// Use TLS with proper certificate verification
+			creds := credentials.NewClientTLSFromCert(nil, "")
 			opts = append(opts, grpc.WithTransportCredentials(creds))
 		}
 	} else {
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
-	conn, err := grpc.DialContext(ctx, c.target, opts...)
+	conn, err := grpc.NewClient(c.target, opts...)
 	if err != nil {
 		return fmt.Errorf("failed to connect to %s: %w", c.target, err)
 	}

@@ -183,7 +183,7 @@ func TestCollectorNoCustomMetrics(t *testing.T) {
 
 	stats := collector.Stats(1 * time.Second)
 
-	if stats.ProtocolMetrics != nil && len(stats.ProtocolMetrics) > 0 {
+	if len(stats.ProtocolMetrics) > 0 {
 		t.Error("Expected no protocol metrics when none provided")
 	}
 }
