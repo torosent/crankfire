@@ -262,10 +262,10 @@ func TestOAuth2TokenRefresh(t *testing.T) {
 // TestOAuth2ErrorHandling verifies proper error handling
 func TestOAuth2ErrorHandling(t *testing.T) {
 	tests := []struct {
-		name           string
-		statusCode     int
-		responseBody   string
-		expectedError  string
+		name          string
+		statusCode    int
+		responseBody  string
+		expectedError string
 	}{
 		{
 			name:          "Non-200 status code",

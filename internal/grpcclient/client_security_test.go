@@ -13,32 +13,32 @@ import (
 // TestClient_TLSConfiguration verifies proper TLS configuration
 func TestClient_TLSConfiguration(t *testing.T) {
 	tests := []struct {
-		name              string
-		useTLS            bool
+		name               string
+		useTLS             bool
 		insecureSkipVerify bool
-		expectedCredsType string
-		description       string
+		expectedCredsType  string
+		description        string
 	}{
 		{
-			name:              "No TLS",
-			useTLS:            false,
+			name:               "No TLS",
+			useTLS:             false,
 			insecureSkipVerify: false,
-			expectedCredsType: "insecure",
-			description:       "Should use insecure credentials when TLS is disabled",
+			expectedCredsType:  "insecure",
+			description:        "Should use insecure credentials when TLS is disabled",
 		},
 		{
-			name:              "TLS with verification",
-			useTLS:            true,
+			name:               "TLS with verification",
+			useTLS:             true,
 			insecureSkipVerify: false,
-			expectedCredsType: "tls",
-			description:       "Should use TLS credentials with certificate verification",
+			expectedCredsType:  "tls",
+			description:        "Should use TLS credentials with certificate verification",
 		},
 		{
-			name:              "TLS without verification",
-			useTLS:            true,
+			name:               "TLS without verification",
+			useTLS:             true,
 			insecureSkipVerify: true,
-			expectedCredsType: "tls_insecure",
-			description:       "Should use TLS credentials but skip certificate verification",
+			expectedCredsType:  "tls_insecure",
+			description:        "Should use TLS credentials but skip certificate verification",
 		},
 	}
 
@@ -225,7 +225,7 @@ func TestTLSConfigInsecureSkipVerify(t *testing.T) {
 // TestClient_MetadataHandling verifies metadata is properly set
 func TestClient_MetadataHandling(t *testing.T) {
 	metadata := map[string]string{
-		"authorization": "Bearer test-token",
+		"authorization":   "Bearer test-token",
 		"x-custom-header": "custom-value",
 	}
 
