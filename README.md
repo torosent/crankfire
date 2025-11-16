@@ -11,7 +11,7 @@ An optimized command-line load testing tool written in Go for HTTP endpoints, We
 - **Flexible Configuration**: Command-line flags, JSON, or YAML config files
 - **Concurrency Control**: Configurable number of parallel workers
 - **Rate Limiting**: Control requests per second
-- **Smart Metrics (Histogram)**: High accuracy Min/Max/Mean + P50/P90/P99 using HDR Histogram
+- **Metrics**: High accuracy Min/Max/Mean + P50/P90/P99 using HDR Histogram
 - **Adaptive Retry Logic**: Conditional retries with exponential backoff + jitter
 - **Multiple Output Formats**: Human-readable or structured JSON (includes error breakdown and protocol metrics)
 - **Real-time Progress**: Lightweight periodic CLI updates with protocol status
