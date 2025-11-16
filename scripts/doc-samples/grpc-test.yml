@@ -1,0 +1,17 @@
+protocol: grpc
+target: localhost:50051
+concurrency: 20
+rate: 100
+duration: 2m
+
+grpc:
+  proto_file: ./api/service.proto
+  service: myapp.UserService
+  method: GetUser
+  message: '{"user_id": "{{user_id}}"}'
+  timeout: 5s
+  tls: false
+  insecure: false
+  metadata:
+    authorization: "Bearer token123"
+    x-request-id: "loadtest-{{request_id}}"

@@ -1,0 +1,14 @@
+protocol: websocket
+target: ws://localhost:8080/chat
+concurrency: 10
+duration: 1m
+
+feeder:
+  path: ./users.csv
+  type: csv
+
+websocket:
+  messages:
+    - '{"action":"auth","user_id":"{{user_id}}"}'
+    - '{"action":"join","channel":"{{channel}}","username":"{{username}}"}'
+  message_interval: 1s

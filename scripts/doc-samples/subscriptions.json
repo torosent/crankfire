@@ -1,0 +1,5 @@
+[
+  {"topic": "sports", "filter": "live", "priority": "high"},
+  {"topic": "news", "filter": "breaking", "priority": "medium"},
+  {"topic": "tech", "filter": "updates", "priority": "low"}
+]

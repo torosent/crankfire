@@ -1,0 +1,13 @@
+{
+  "target": "https://api.example.com/v1/users",
+  "method": "GET",
+  "headers": {
+    "Authorization": "Bearer your-token-here",
+    "Accept": "application/json"
+  },
+  "concurrency": 25,
+  "rate": 50,
+  "duration": "2m",
+  "timeout": "10s",
+  "retries": 2
+}

@@ -8,7 +8,9 @@ import (
 	"time"
 
 	gws "github.com/gorilla/websocket"
+	"github.com/torosent/crankfire/internal/auth"
 	"github.com/torosent/crankfire/internal/config"
+	"github.com/torosent/crankfire/internal/httpclient"
 	"github.com/torosent/crankfire/internal/metrics"
 	ws "github.com/torosent/crankfire/internal/websocket"
 )
@@ -18,14 +20,18 @@ type websocketRequester struct {
 	target    string
 	headers   map[string]string
 	collector *metrics.Collector
+	auth      auth.Provider
+	feeder    httpclient.Feeder
 }
 
-func newWebSocketRequester(cfg *config.Config, collector *metrics.Collector) *websocketRequester {
+func newWebSocketRequester(cfg *config.Config, collector *metrics.Collector, provider auth.Provider, feeder httpclient.Feeder) *websocketRequester {
 	return &websocketRequester{
 		cfg:       &cfg.WebSocket,
 		target:    cfg.TargetURL,
 		headers:   cfg.Headers,
 		collector: collector,
+		auth:      provider,
+		feeder:    feeder,
 	}
 }
 
@@ -36,10 +42,37 @@ func (w *websocketRequester) Do(ctx context.Context) error {
 
 	start := time.Now()
 
+	record, err := nextFeederRecord(ctx, w.feeder)
+	if err != nil {
+		meta := annotateStatus(&metrics.RequestMetadata{Protocol: "websocket"}, "websocket", fallbackStatusCode(err))
+		w.collector.RecordRequest(time.Since(start), err, meta)
+		return fmt.Errorf("websocket feeder: %w", err)
+	}
+
+	target := w.target
+	if len(record) > 0 {
+		target = applyPlaceholders(target, record)
+	}
+
+	headerMap := applyPlaceholdersToMap(w.headers, record)
+	wsHeaders := makeHeaders(headerMap)
+	if err := ensureAuthHeader(ctx, w.auth, wsHeaders); err != nil {
+		meta := annotateStatus(&metrics.RequestMetadata{Protocol: "websocket"}, "websocket", fallbackStatusCode(err))
+		w.collector.RecordRequest(time.Since(start), err, meta)
+		return fmt.Errorf("websocket auth header: %w", err)
+	}
+
+	messages := append([]string(nil), w.cfg.Messages...)
+	if len(record) > 0 {
+		for i, msg := range messages {
+			messages[i] = applyPlaceholders(msg, record)
+		}
+	}
+
 	// Create WebSocket client config
 	wsCfg := ws.Config{
-		URL:              w.target,
-		Headers:          makeHeaders(w.headers),
+		URL:              target,
+		Headers:          wsHeaders,
 		HandshakeTimeout: w.cfg.HandshakeTimeout,
 		ReadTimeout:      w.cfg.ReceiveTimeout,
 		WriteTimeout:     5 * time.Second, // Default write timeout
@@ -57,7 +90,7 @@ func (w *websocketRequester) Do(ctx context.Context) error {
 	defer client.Close()
 
 	// Send configured messages
-	for _, msg := range w.cfg.Messages {
+	for _, msg := range messages {
 		if ctx.Err() != nil {
 			break
 		}

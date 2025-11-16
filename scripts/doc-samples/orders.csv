@@ -1,0 +1,4 @@
+order_id,customer_id,amount,items,timestamp
+ord-001,cust-101,49.99,3,2024-01-01T10:00:00Z
+ord-002,cust-102,79.99,5,2024-01-01T10:05:00Z
+ord-003,cust-103,29.99,1,2024-01-01T10:10:00Z

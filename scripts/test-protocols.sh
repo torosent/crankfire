@@ -1,13 +1,29 @@
 #!/bin/bash
 # Test WebSocket and SSE protocol integration
 
-set -e
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+BUILD_DIR="$PROJECT_ROOT/build"
+CRANKFIRE_BIN="$BUILD_DIR/crankfire"
+
+ensure_binary() {
+  if [[ ! -x "$CRANKFIRE_BIN" ]]; then
+    echo "[build] crankfire binary not found, building..."
+    (cd "$PROJECT_ROOT" && go build -o "$CRANKFIRE_BIN" ./cmd/crankfire)
+  else
+    echo "[build] using crankfire binary: $CRANKFIRE_BIN"
+  fi
+}
+
+ensure_binary
 
 echo "=== Testing WebSocket Protocol ==="
 echo "Testing against public WebSocket echo server..."
 
 # Test WebSocket with a public echo server
-./build/crankfire \
+"$CRANKFIRE_BIN" \
   --protocol websocket \
   --target wss://ws.postman-echo.com/raw \
   --ws-message-interval 200ms \
@@ -67,7 +83,7 @@ echo "SSE server PID: $SSE_PID"
 sleep 2
 
 echo "Running SSE load test..."
-./build/crankfire \
+"$CRANKFIRE_BIN" \
   --protocol sse \
   --target http://localhost:8766/events \
   --sse-read-timeout 5s \
@@ -94,11 +110,8 @@ echo "=== Testing gRPC Protocol ==="
 echo "Note: gRPC test requires a running gRPC server"
 echo "Testing gRPC configuration parsing..."
 
-# Get the script directory to find grpc-sample.yml
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 # Test gRPC configuration validation (will fail to connect but validates config)
-./build/crankfire \
+"$CRANKFIRE_BIN" \
   --config "$SCRIPT_DIR/grpc-sample.yml" \
   --total 3 \
   --duration 5s \

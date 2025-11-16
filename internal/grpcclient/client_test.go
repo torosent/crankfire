@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 func TestNewClient(t *testing.T) {
@@ -79,16 +81,19 @@ func TestClientInvokeWithoutConnect(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	req := map[string]interface{}{"test": "data"}
+	req := &emptypb.Empty{}
+	resp := &emptypb.Empty{}
 
-	_, err = client.Invoke(ctx, req)
+	err = client.Invoke(ctx, req, resp)
 	if err == nil {
 		t.Error("Expected error when invoking without connect")
 	}
 	// Check for expected error message (could be "not connected" or "client not connected")
-	errMsg := err.Error()
-	if errMsg != "not connected" && errMsg != "client not connected" {
-		t.Errorf("Expected 'not connected' or 'client not connected' error, got: %v", err)
+	if err != nil {
+		errMsg := err.Error()
+		if errMsg != "client not connected" {
+			t.Errorf("Expected 'client not connected' error, got: %v", err)
+		}
 	}
 }
 

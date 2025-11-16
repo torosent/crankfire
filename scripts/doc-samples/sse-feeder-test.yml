@@ -1,0 +1,12 @@
+protocol: sse
+target: http://localhost:8080/stream?topic={{topic}}&filter={{filter}}
+concurrency: 15
+duration: 3m
+
+feeder:
+  path: ./topics.csv
+  type: csv
+
+sse:
+  read_timeout: 30s
+  max_events: 200

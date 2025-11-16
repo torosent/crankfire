@@ -1,6 +1,43 @@
 # Usage Examples
 
+This page is a curated, docs‑friendly version of `docs/USAGE.md`.
+
+
+
+## Basics
+
+- Simple GET: `crankfire --target https://httpbin.org/get --total 100`
+- Concurrency: `--concurrency 50 --total 1000`
+- Duration‑based: `--concurrency 10 --duration 30s`
+
+## Rate Limiting & Patterns
+
+- Fixed rate: `--rate 100 --duration 1m`
+- Advanced patterns: use `load_patterns` and `arrival` in config (see examples in `USAGE.md`).
+
+## Authentication & Headers
+
+- Manual header: `--header "Authorization=Bearer token"`
+- OAuth helpers: configure `auth` section in JSON/YAML.
+
+## Protocols
+
+- WebSocket: `--protocol websocket --ws-messages '{"type":"ping"}' ...`
+- SSE: `--protocol sse --sse-read-timeout 30s ...`
+- gRPC: `--protocol grpc --grpc-proto-file ./service.proto ...`
+
+## Feeders
+
+- CSV: `--feeder-path ./users.csv --feeder-type csv`
+- JSON: `--feeder-path ./products.json --feeder-type json`
+
+See the dedicated pages for [Authentication](authentication.md), [Data Feeders](feeders.md), and [Protocols](protocols.md).
+# Usage Examples
+
 This document provides practical examples for using Crankfire in various scenarios.
+
+> **Doc Samples Ready To Run**
+> All `Create ...` snippets below already exist under `scripts/doc-samples`. Change into that directory before running the accompanying commands (for example, `cd scripts/doc-samples && crankfire --config loadtest.yaml`). You can also execute `scripts/verify-doc-samples.sh` from the repo root to automatically parse every sample and make sure nothing in the docs has drifted.
 
 ## Basic Examples
 
@@ -1009,7 +1046,7 @@ Output includes protocol metrics:
 
 ## Combined Scenarios
 
-Crankfire supports combining multiple features for realistic, complex load testing scenarios.
+Crankfire supports combining multiple features for realistic, complex load testing scenarios. Remember that each execution chooses a single `protocol`; run additional configs if you need to compare multiple protocols in the same plan.
 
 ### OAuth2 + CSV Feeder + HTTP
 
@@ -1084,7 +1121,7 @@ arrival:
   model: poisson  # Natural clustering of connections
 ```
 
-### SSE + JSON Feeder + Multi-Endpoint
+### SSE + JSON Feeder
 
 Test event streaming across multiple topics with dynamic subscriptions:
 
@@ -1097,9 +1134,10 @@ Create `subscriptions.json`:
 ]
 ```
 
-Create `sse-multi-endpoint.yml`:
+Create `sse-feeder.yml`:
 ```yaml
 protocol: sse
+target: https://stream.example.com/events?topic={{topic}}&filter={{filter}}
 concurrency: 30
 rate: 150
 duration: 3m
@@ -1108,21 +1146,15 @@ feeder:
   path: ./subscriptions.json
   type: json
 
+headers:
+  X-Priority: "{{priority}}"
+
 sse:
   read_timeout: 45s
   max_events: 200
-
-endpoints:
-  - name: subscribe-stream
-    weight: 80
-    url: https://stream.example.com/events?topic={{topic}}&filter={{filter}}
-    headers:
-      X-Priority: "{{priority}}"
-  - name: health-check
-    weight: 20
-    url: https://stream.example.com/health
-    method: GET
 ```
+
+> SSE (and other non-HTTP protocols) do not support the HTTP `endpoints` weighting block. Use feeders to vary connection parameters instead.
 
 ### gRPC + OAuth2 + CSV Feeder + Load Patterns
 
@@ -1130,10 +1162,10 @@ Complex gRPC test with ramp-up, authentication, and data injection:
 
 Create `orders.csv`:
 ```csv
-order_id,customer_id,amount,items
-ord-001,cust-101,49.99,3
-ord-002,cust-102,79.99,5
-ord-003,cust-103,29.99,1
+order_id,customer_id,amount,items,timestamp
+ord-001,cust-101,49.99,3,2024-01-01T10:00:00Z
+ord-002,cust-102,79.99,5,2024-01-01T10:05:00Z
+ord-003,cust-103,29.99,1,2024-01-01T10:10:00Z
 ```
 
 Create `grpc-complete-test.yml`:
@@ -1198,79 +1230,9 @@ Run with dashboard:
 crankfire --config grpc-complete-test.yml --dashboard
 ```
 
-### Multi-Protocol Report
+### Multi-Protocol Runs
 
-Test multiple protocols in a single run with weighted endpoints:
-
-```yaml
-concurrency: 50
-rate: 200
-duration: 5m
-
-arrival:
-  model: poisson
-
-endpoints:
-  - name: http-api
-    weight: 50
-    protocol: http
-    url: https://api.example.com/data
-    method: GET
-  
-  - name: websocket-feed
-    weight: 30
-    protocol: websocket
-    url: ws://stream.example.com/ws
-    websocket:
-      messages:
-        - '{"subscribe":"updates"}'
-      message_interval: 1s
-  
-  - name: sse-events
-    weight: 15
-    protocol: sse
-    url: https://events.example.com/stream
-    sse:
-      read_timeout: 30s
-      max_events: 100
-  
-  - name: grpc-service
-    weight: 5
-    protocol: grpc
-    target: grpc.example.com:50051
-    grpc:
-      proto_file: ./service.proto
-      service: api.Service
-      method: Process
-      message: '{"data":"test"}'
-```
-
-The JSON output will include protocol-specific metrics for each protocol:
-
-```json
-{
-  "total": 10000,
-  "protocol_metrics": {
-    "http": {
-      "requests": 5000,
-      "successes": 4998
-    },
-    "websocket": {
-      "connections": 3000,
-      "messages_sent": 15000,
-      "messages_received": 14850
-    },
-    "sse": {
-      "connections": 1500,
-      "events_received": 75000
-    },
-    "grpc": {
-      "calls": 500,
-      "responses": 498
-    }
-  }
-}
-```
+Not supported yet. Crankfire currently targets one protocol per execution so it can provide accurate, protocol-aware metrics and connection lifecycle management. To compare multiple protocols, run the relevant scenarios separately and aggregate the resulting reports or dashboards.
 
 ### Feature Matrix Summary
 
@@ -1278,10 +1240,5 @@ The JSON output will include protocol-specific metrics for each protocol:
 |----------|:----:|:------:|:--------:|:-------:|:-------------:|
 | OAuth2 + CSV + HTTP | ✅ | ✅ | HTTP | ⚪ | ⚪ |
 | WebSocket + OAuth2 + Poisson | ✅ | ⚪ | WebSocket | ✅ | ⚪ |
-| SSE + JSON + Endpoints | ⚪ | ✅ | SSE | ⚪ | ⚪ |
+| SSE + JSON + Feeder | ⚪ | ✅ | SSE | ⚪ | ⚪ |
 | gRPC + OAuth2 + CSV + Patterns | ✅ | ✅ | gRPC | ✅ | ✅ |
-| Multi-Protocol Report | ⚪ | ⚪ | All | ✅ | ⚪ |
-
-All features can be combined in any configuration. These scenarios demonstrate common patterns.
-
-````

@@ -1,0 +1,4 @@
+user_id,email,name,department,role,username,channel
+101,alice@example.com,Alice,engineering,developer,alice,general
+102,bob@example.com,Bob,sales,manager,bob,random
+103,charlie@example.com,Charlie,support,agent,charlie,support

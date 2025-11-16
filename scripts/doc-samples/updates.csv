@@ -1,0 +1,4 @@
+resource,id,name,status,user
+products,p123,Widget Pro,active,admin
+orders,o456,Order 456,pending,system
+users,u789,Test User,inactive,admin

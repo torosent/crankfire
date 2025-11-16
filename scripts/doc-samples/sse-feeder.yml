@@ -1,0 +1,16 @@
+protocol: sse
+target: https://stream.example.com/events?topic={{topic}}&filter={{filter}}
+concurrency: 30
+rate: 150
+duration: 3m
+
+feeder:
+  path: ./subscriptions.json
+  type: json
+
+headers:
+  X-Priority: "{{priority}}"
+
+sse:
+  read_timeout: 45s
+  max_events: 200
