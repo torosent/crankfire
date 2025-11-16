@@ -9,6 +9,7 @@ import (
 	"github.com/torosent/crankfire/internal/config"
 	"github.com/torosent/crankfire/internal/grpcclient"
 	"github.com/torosent/crankfire/internal/metrics"
+	"google.golang.org/grpc/status"
 )
 
 type grpcRequester struct {
@@ -43,9 +44,11 @@ func (g *grpcRequester) Do(ctx context.Context) error {
 		Insecure: g.cfg.Insecure,
 	}
 
+	meta := &metrics.RequestMetadata{Protocol: "grpc"}
 	client, err := grpcclient.NewClient(grpcCfg)
 	if err != nil {
-		g.collector.RecordRequest(time.Since(start), err, nil)
+		meta = annotateStatus(meta, "grpc", fallbackStatusCode(err))
+		g.collector.RecordRequest(time.Since(start), err, meta)
 		return fmt.Errorf("create grpc client: %w", err)
 	}
 
@@ -58,7 +61,8 @@ func (g *grpcRequester) Do(ctx context.Context) error {
 	}
 
 	if err := client.Connect(connectCtx); err != nil {
-		g.collector.RecordRequest(time.Since(start), err, nil)
+		meta = annotateStatus(meta, "grpc", grpcStatusCode(err))
+		g.collector.RecordRequest(time.Since(start), err, meta)
 		return fmt.Errorf("grpc connect: %w", err)
 	}
 	defer client.Close()
@@ -89,7 +93,8 @@ func (g *grpcRequester) Do(ctx context.Context) error {
 	latency := time.Since(start)
 
 	if err != nil {
-		g.collector.RecordRequest(latency, err, nil)
+		meta = annotateStatus(meta, "grpc", grpcStatusCode(err))
+		g.collector.RecordRequest(latency, err, meta)
 		return fmt.Errorf("grpc invoke: %w", err)
 	}
 
@@ -97,17 +102,25 @@ func (g *grpcRequester) Do(ctx context.Context) error {
 	grpcMetrics := client.Metrics()
 
 	// Record as successful request with gRPC-specific metadata
-	meta := &metrics.RequestMetadata{
-		Protocol: "grpc",
-		CustomMetrics: map[string]interface{}{
-			"messages_sent":     grpcMetrics.MessagesSent,
-			"messages_received": grpcMetrics.MessagesRecv,
-			"bytes_sent":        grpcMetrics.BytesSent,
-			"bytes_received":    grpcMetrics.BytesRecv,
-			"status_code":       grpcMetrics.StatusCode,
-		},
+	meta = ensureProtocolMeta(meta, "grpc")
+	meta.CustomMetrics = map[string]interface{}{
+		"messages_sent":     grpcMetrics.MessagesSent,
+		"messages_received": grpcMetrics.MessagesRecv,
+		"bytes_sent":        grpcMetrics.BytesSent,
+		"bytes_received":    grpcMetrics.BytesRecv,
+		"status_code":       grpcMetrics.StatusCode,
 	}
 
 	g.collector.RecordRequest(latency, nil, meta)
 	return nil
+}
+
+func grpcStatusCode(err error) string {
+	if err == nil {
+		return ""
+	}
+	if st, ok := status.FromError(err); ok {
+		return st.Code().String()
+	}
+	return fallbackStatusCode(err)
 }

@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -83,5 +84,38 @@ func TestCollectorWithProtocolMetrics(t *testing.T) {
 	}
 	if _, ok := stats.ProtocolMetrics["grpc"]; !ok {
 		t.Error("Expected grpc metrics")
+	}
+}
+
+func TestFormatStatusListRows(t *testing.T) {
+	rows := formatStatusListRows(map[string]map[string]int{
+		"http": {
+			"404": 3,
+			"500": 1,
+		},
+		"grpc": {
+			"UNAVAILABLE": 2,
+		},
+	})
+	if len(rows) == 0 {
+		t.Fatal("expected status rows to be populated")
+	}
+	if !strings.Contains(rows[0], "HTTP") {
+		t.Fatalf("expected HTTP protocol in formatted row, got %s", rows[0])
+	}
+}
+
+func TestSummarizeStatusBuckets(t *testing.T) {
+	summary := summarizeStatusBuckets(map[string]map[string]int{
+		"http": {
+			"404": 2,
+			"500": 1,
+		},
+	}, 1)
+	if summary == "" {
+		t.Fatal("expected summary output")
+	}
+	if !strings.Contains(summary, "404") {
+		t.Fatalf("expected 404 in summary, got %s", summary)
 	}
 }

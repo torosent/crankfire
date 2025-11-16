@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 
 	"github.com/torosent/crankfire/internal/metrics"
 )
@@ -24,28 +25,9 @@ func PrintReport(w io.Writer, stats metrics.Stats) {
 	fmt.Fprintf(w, "  P50:             %s\n", stats.P50Latency)
 	fmt.Fprintf(w, "  P90:             %s\n", stats.P90Latency)
 	fmt.Fprintf(w, "  P99:             %s\n", stats.P99Latency)
-	if len(stats.Errors) > 0 {
-		fmt.Fprintln(w, "\nErrors:")
-		type errorRow struct {
-			label string
-			count int
-		}
-		errors := make([]errorRow, 0, len(stats.Errors))
-		for raw, count := range stats.Errors {
-			errors = append(errors, errorRow{
-				label: metrics.FriendlyErrorName(raw),
-				count: count,
-			})
-		}
-		sort.Slice(errors, func(i, j int) bool {
-			if errors[i].count == errors[j].count {
-				return errors[i].label < errors[j].label
-			}
-			return errors[i].count > errors[j].count
-		})
-		for _, row := range errors {
-			fmt.Fprintf(w, "  %s: %d\n", row.label, row.count)
-		}
+	if len(stats.StatusBuckets) > 0 {
+		fmt.Fprintln(w, "\nStatus Buckets:")
+		writeStatusBuckets(w, stats.StatusBuckets, "  ")
 	}
 
 	if len(stats.Endpoints) > 0 {
@@ -75,6 +57,10 @@ func PrintReport(w io.Writer, stats metrics.Stats) {
 				endpoint.RequestsPerSec,
 				endpoint.P99Latency,
 			)
+			if len(endpoint.StatusBuckets) > 0 {
+				fmt.Fprintln(w, "    Status Buckets:")
+				writeStatusBuckets(w, endpoint.StatusBuckets, "      ")
+			}
 		}
 	}
 
@@ -105,4 +91,22 @@ func PrintJSONReport(w io.Writer, stats metrics.Stats) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	return enc.Encode(stats)
+}
+
+func writeStatusBuckets(w io.Writer, buckets map[string]map[string]int, indent string) {
+	rows := metrics.FlattenStatusBuckets(buckets)
+	if len(rows) == 0 {
+		fmt.Fprintf(w, "%sNone\n", indent)
+		return
+	}
+	for _, row := range rows {
+		fmt.Fprintf(
+			w,
+			"%s%s %s: %d\n",
+			indent,
+			strings.ToUpper(row.Protocol),
+			row.Code,
+			row.Count,
+		)
+	}
 }

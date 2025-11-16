@@ -13,7 +13,7 @@ An optimized command-line load testing tool written in Go for HTTP endpoints, We
 - **Rate Limiting**: Control requests per second
 - **Metrics**: High accuracy Min/Max/Mean + P50/P90/P99 using HDR Histogram
 - **Adaptive Retry Logic**: Conditional retries with exponential backoff + jitter
-- **Multiple Output Formats**: Human-readable or structured JSON (includes error breakdown and protocol metrics)
+- **Multiple Output Formats**: Human-readable or structured JSON (includes status buckets and protocol metrics)
 - **Real-time Progress**: Lightweight periodic CLI updates with protocol status
 - **Advanced Workload Modeling**: Ramp/step/spike phases, Poisson arrivals, and weighted endpoint mixes
 
@@ -282,6 +282,10 @@ Latency:
   P50:             42ms
   P90:             68ms
   P99:             112ms
+
+Status Buckets:
+  HTTP 404: 1
+  HTTP 500: 1
 ```
 
 ### JSON Output
@@ -303,9 +307,11 @@ crankfire --target https://example.com --total 100 --json-output
   "p99_latency_ms": 112.7,
   "duration_ms": 10245.3,
   "requests_per_sec": 9.76,
-  "errors": {
-    "*runner.HTTPError": 2,
-    "*context.deadlineExceeded": 1
+  "status_buckets": {
+    "http": {
+      "404": 2,
+      "500": 1
+    }
   },
   "endpoints": {
     "list-users": {
@@ -321,8 +327,10 @@ crankfire --target https://example.com --total 100 --json-output
       "failures": 8,
       "p99_latency_ms": 180.4,
       "requests_per_sec": 39.1,
-      "errors": {
-        "*runner.HTTPError": 8
+      "status_buckets": {
+        "http": {
+          "503": 8
+        }
       }
     }
   }
@@ -336,7 +344,7 @@ The dashboard provides a real-time, interactive view of your load test with the 
 - **Sparkline Latency Graph**: Visual representation of latency over time
 - **RPS Gauge**: Current requests per second with percentage indicator
 - **Metrics Table**: Real-time statistics including total requests, success/failure counts, and latency percentiles
-- **Error Breakdown**: List of errors by type with count
+- **Status Buckets**: Protocol-specific failure codes with counts
 - **Endpoint Breakdown**: Weighted endpoint view with live share, RPS, and tail latency
 - **Test Summary**: Elapsed time, total requests, and success rate
 
@@ -372,14 +380,14 @@ crankfire --target https://api.example.com \
 │ ▂▃▄▅▃▂▃▄▅▆▅▄▃▂▃▄▅▆▇▆▅▄▃▂▃▄▅▆▅▄▃▂                               │
 └────────────────────────────────────────────────────────────────┘
 
-┌ Endpoints ─────────────────────────────────────────────────────┐
-│ list-users  | 60.0% | RPS 240.0 | P99 120.3ms | Err 2          │
-│ create-order| 40.0% | RPS 160.0 | P99 210.5ms | Err 12         │
-└────────────────────────────────────────────────────────────────┘
+┌ Endpoints ───────────────────────────────────────────────────────────────────┐
+│ list-users  | 60.0% | RPS 240.0 | P99 120.3ms | Err 2 | Status HTTP 404 x2   │
+│ create-order| 40.0% | RPS 160.0 | P99 210.5ms | Err 12 | Status HTTP 503 x12 │
+└──────────────────────────────────────────────────────────────────────────────┘
 
-┌ Error Breakdown ───────────────────────────────────────────────┐
-│ *runner.HTTPError: 38                                          │
-│ context.deadlineExceededError: 7                               │
+┌ Status Buckets ────────────────────────────────────────────────┐
+│ HTTP 404 38                                                    │
+│ HTTP 503 7                                                     │
 └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -796,7 +804,7 @@ crankfire --target https://flaky-api.example.com \
 - **Load Testing**: Simulate concurrent users and high traffic
 - **Stress Testing**: Find breaking points (histogram percentile accuracy)
 - **CI/CD Integration**: Automated performance regression testing with JSON output
-- **Failure Analysis**: Error breakdown object highlights dominant failure classes
+- **Failure Analysis**: Status bucket breakdown highlights protocol-specific failure patterns
 
 ## Responsible Use and Legal Notice
 

@@ -38,6 +38,11 @@ func TestPrintReportIncludesProtocolMetrics(t *testing.T) {
 			Total:          100,
 			Successes:      100,
 			RequestsPerSec: 50.0,
+			StatusBuckets: map[string]map[string]int{
+				"http": {
+					"404": 2,
+				},
+			},
 		},
 		Duration: 2 * time.Second,
 		ProtocolMetrics: map[string]map[string]interface{}{
@@ -58,6 +63,12 @@ func TestPrintReportIncludesProtocolMetrics(t *testing.T) {
 	if !strings.Contains(output, "Protocol Metrics:") {
 		t.Errorf("Expected Protocol Metrics section in output")
 	}
+	if !strings.Contains(output, "Status Buckets:") {
+		t.Errorf("Expected Status Buckets section in output")
+	}
+	if !strings.Contains(output, "HTTP 404: 2") {
+		t.Errorf("Expected HTTP status bucket to appear in output")
+	}
 	if !strings.Contains(output, "websocket:") {
 		t.Errorf("Expected websocket protocol in output")
 	}
@@ -75,6 +86,11 @@ func TestPrintJSONReportWithProtocolMetrics(t *testing.T) {
 			Total:          100,
 			Successes:      100,
 			RequestsPerSec: 50.0,
+			StatusBuckets: map[string]map[string]int{
+				"http": {
+					"500": 1,
+				},
+			},
 		},
 		DurationMs: 2000.0,
 		ProtocolMetrics: map[string]map[string]interface{}{
@@ -96,5 +112,47 @@ func TestPrintJSONReportWithProtocolMetrics(t *testing.T) {
 	}
 	if !strings.Contains(output, `"sse"`) {
 		t.Errorf("Expected sse protocol in JSON output")
+	}
+	if !strings.Contains(output, `"status_buckets"`) {
+		t.Errorf("Expected status_buckets in JSON output")
+	}
+}
+
+func TestPrintReportIncludesEndpointStatusBuckets(t *testing.T) {
+	stats := metrics.Stats{
+		EndpointStats: metrics.EndpointStats{
+			Total:     10,
+			Successes: 7,
+			Failures:  3,
+			StatusBuckets: map[string]map[string]int{
+				"http": {
+					"500": 2,
+				},
+			},
+		},
+		Endpoints: map[string]metrics.EndpointStats{
+			"users": {
+				Total:    5,
+				Failures: 2,
+				StatusBuckets: map[string]map[string]int{
+					"grpc": {
+						"UNAVAILABLE": 2,
+					},
+				},
+			},
+		},
+	}
+
+	var buf bytes.Buffer
+	PrintReport(&buf, stats)
+	output := buf.String()
+	if !strings.Contains(output, "Status Buckets:") {
+		t.Fatalf("expected status bucket header in output")
+	}
+	if !strings.Contains(output, "HTTP 500: 2") {
+		t.Fatalf("expected HTTP status bucket count, got %s", output)
+	}
+	if !strings.Contains(output, "GRPC UNAVAILABLE") {
+		t.Fatalf("expected endpoint status bucket, got %s", output)
 	}
 }

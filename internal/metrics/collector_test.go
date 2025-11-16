@@ -2,6 +2,7 @@ package metrics_test
 
 import (
 	"encoding/json"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -136,5 +137,47 @@ func TestEndpointBreakdown(t *testing.T) {
 	}
 	if users.RequestsPerSec <= 0 {
 		t.Fatalf("expected users RPS to be > 0")
+	}
+}
+
+func TestCollectorTracksExactStatusBuckets(t *testing.T) {
+	c := metrics.NewCollector()
+	protocol := "http"
+
+	c.RecordRequest(10*time.Millisecond, errors.New("boom"), &metrics.RequestMetadata{
+		Endpoint:   "users",
+		Protocol:   protocol,
+		StatusCode: "404",
+	})
+	c.RecordRequest(15*time.Millisecond, errors.New("boom"), &metrics.RequestMetadata{
+		Endpoint:   "users",
+		Protocol:   protocol,
+		StatusCode: "404",
+	})
+	c.RecordRequest(20*time.Millisecond, errors.New("fail"), &metrics.RequestMetadata{
+		Endpoint:   "users",
+		Protocol:   protocol,
+		StatusCode: "500",
+	})
+	c.RecordRequest(25*time.Millisecond, nil, &metrics.RequestMetadata{
+		Endpoint: "users",
+		Protocol: protocol,
+	}) // successes must not count toward buckets
+
+	stats := c.Stats(2 * time.Second)
+	if stats.StatusBuckets == nil {
+		t.Fatalf("expected status buckets to be populated")
+	}
+	httpBuckets := stats.StatusBuckets[protocol]
+	if httpBuckets["404"] != 2 {
+		t.Fatalf("expected 404 bucket to equal 2, got %d", httpBuckets["404"])
+	}
+	if httpBuckets["500"] != 1 {
+		t.Fatalf("expected 500 bucket to equal 1, got %d", httpBuckets["500"])
+	}
+
+	endpointBuckets := stats.Endpoints["users"].StatusBuckets[protocol]
+	if endpointBuckets["404"] != 2 {
+		t.Fatalf("expected endpoint 404 bucket to equal 2, got %d", endpointBuckets["404"])
 	}
 }

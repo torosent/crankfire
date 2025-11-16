@@ -18,6 +18,15 @@ type Event struct {
 	Data  string
 }
 
+// StatusError is returned when the SSE endpoint responds with a non-200 status code.
+type StatusError struct {
+	Code int
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("unexpected status code: %d", e.Code)
+}
+
 // Metrics captures SSE-specific performance data.
 type Metrics struct {
 	ConnectionDuration time.Duration
@@ -98,7 +107,7 @@ func (c *Client) Connect(ctx context.Context) error {
 	if resp.StatusCode != http.StatusOK {
 		c.errors++
 		resp.Body.Close()
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return &StatusError{Code: resp.StatusCode}
 	}
 
 	c.resp = resp

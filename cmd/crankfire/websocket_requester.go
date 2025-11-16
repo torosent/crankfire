@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
+	gws "github.com/gorilla/websocket"
 	"github.com/torosent/crankfire/internal/config"
 	"github.com/torosent/crankfire/internal/metrics"
-	"github.com/torosent/crankfire/internal/websocket"
+	ws "github.com/torosent/crankfire/internal/websocket"
 )
 
 type websocketRequester struct {
@@ -34,7 +37,7 @@ func (w *websocketRequester) Do(ctx context.Context) error {
 	start := time.Now()
 
 	// Create WebSocket client config
-	wsCfg := websocket.Config{
+	wsCfg := ws.Config{
 		URL:              w.target,
 		Headers:          makeHeaders(w.headers),
 		HandshakeTimeout: w.cfg.HandshakeTimeout,
@@ -42,11 +45,13 @@ func (w *websocketRequester) Do(ctx context.Context) error {
 		WriteTimeout:     5 * time.Second, // Default write timeout
 	}
 
-	client := websocket.NewClient(wsCfg)
+	meta := &metrics.RequestMetadata{Protocol: "websocket"}
+	client := ws.NewClient(wsCfg)
 
 	// Connect to WebSocket server
 	if err := client.Connect(ctx); err != nil {
-		w.collector.RecordRequest(time.Since(start), err, nil)
+		meta = annotateStatus(meta, "websocket", websocketStatusFromError(err))
+		w.collector.RecordRequest(time.Since(start), err, meta)
 		return fmt.Errorf("websocket connect: %w", err)
 	}
 	defer client.Close()
@@ -57,11 +62,12 @@ func (w *websocketRequester) Do(ctx context.Context) error {
 			break
 		}
 
-		if err := client.SendMessage(ctx, websocket.Message{
+		if err := client.SendMessage(ctx, ws.Message{
 			Type: 1, // TextMessage
 			Data: []byte(msg),
 		}); err != nil {
-			w.collector.RecordRequest(time.Since(start), err, nil)
+			meta = annotateStatus(meta, "websocket", websocketStatusFromError(err))
+			w.collector.RecordRequest(time.Since(start), err, meta)
 			return fmt.Errorf("send message: %w", err)
 		}
 
@@ -88,7 +94,8 @@ func (w *websocketRequester) Do(ctx context.Context) error {
 					break
 				}
 				// Other errors
-				w.collector.RecordRequest(time.Since(start), err, nil)
+				meta = annotateStatus(meta, "websocket", websocketStatusFromError(err))
+				w.collector.RecordRequest(time.Since(start), err, meta)
 				return fmt.Errorf("receive message: %w", err)
 			}
 		}
@@ -99,17 +106,25 @@ func (w *websocketRequester) Do(ctx context.Context) error {
 	latency := time.Since(start)
 
 	// Record as successful request with WebSocket-specific metadata
-	meta := &metrics.RequestMetadata{
-		Protocol: "websocket",
-		CustomMetrics: map[string]interface{}{
-			"connection_duration_ms": wsMetrics.ConnectionDuration.Milliseconds(),
-			"messages_sent":          wsMetrics.MessagesSent,
-			"messages_received":      wsMetrics.MessagesReceived,
-			"bytes_sent":             wsMetrics.BytesSent,
-			"bytes_received":         wsMetrics.BytesReceived,
-		},
+	meta.CustomMetrics = map[string]interface{}{
+		"connection_duration_ms": wsMetrics.ConnectionDuration.Milliseconds(),
+		"messages_sent":          wsMetrics.MessagesSent,
+		"messages_received":      wsMetrics.MessagesReceived,
+		"bytes_sent":             wsMetrics.BytesSent,
+		"bytes_received":         wsMetrics.BytesReceived,
 	}
 
 	w.collector.RecordRequest(latency, nil, meta)
 	return nil
+}
+
+func websocketStatusFromError(err error) string {
+	if err == nil {
+		return ""
+	}
+	var closeErr *gws.CloseError
+	if errors.As(err, &closeErr) && closeErr.Code != 0 {
+		return strconv.Itoa(closeErr.Code)
+	}
+	return fallbackStatusCode(err)
 }
