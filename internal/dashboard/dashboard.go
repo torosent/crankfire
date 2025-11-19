@@ -37,10 +37,12 @@ type Dashboard struct {
 	rpsHistory     []float64
 	lastUpdateTime time.Time
 	startTime      time.Time
+	targetURL      string
+	testDuration   time.Duration
 }
 
 // New creates a new Dashboard.
-func New(collector *metrics.Collector, shutdownFunc func()) (*Dashboard, error) {
+func New(collector *metrics.Collector, targetURL string, shutdownFunc func()) (*Dashboard, error) {
 	if err := ui.Init(); err != nil {
 		return nil, fmt.Errorf("failed to initialize termui: %w", err)
 	}
@@ -56,6 +58,7 @@ func New(collector *metrics.Collector, shutdownFunc func()) (*Dashboard, error) 
 		rpsHistory:     make([]float64, 0, 100),
 		startTime:      time.Now(),
 		lastUpdateTime: time.Now(),
+		targetURL:      targetURL,
 	}
 
 	d.initWidgets()
@@ -164,9 +167,15 @@ func (d *Dashboard) Start() {
 func (d *Dashboard) Stop() {
 	d.cancel()
 	d.wg.Wait()
+	d.testDuration = time.Since(d.startTime)
 	ui.Close()
 	// Give terminal time to restore
 	time.Sleep(100 * time.Millisecond)
+}
+
+// GetFinalStats returns the final statistics after the dashboard has stopped.
+func (d *Dashboard) GetFinalStats() metrics.Stats {
+	return d.collector.Stats(d.testDuration)
 }
 
 // run is the main dashboard update loop.
@@ -231,6 +240,13 @@ func (d *Dashboard) update() {
 			d.latencyHistory = d.latencyHistory[1:]
 		}
 		d.latencySparkle.Sparklines[0].Data = d.latencyHistory
+		// Update sparkline title with current latency values
+		d.latencySparkle.Title = fmt.Sprintf(
+			"Real-time Latency | Current: %.2fms | Min: %.2fms | Max: %.2fms",
+			latencyMs,
+			stats.MinLatencyMs,
+			stats.MaxLatencyMs,
+		)
 	}
 
 	currentRPS := stats.RequestsPerSec
@@ -249,8 +265,13 @@ func (d *Dashboard) update() {
 	if stats.Total > 0 {
 		successRate = (float64(stats.Successes) / float64(stats.Total)) * 100
 	}
+	targetDisplay := d.targetURL
+	if len(targetDisplay) > 60 {
+		targetDisplay = targetDisplay[:57] + "..."
+	}
 	d.summaryPara.Text = fmt.Sprintf(
-		"Elapsed: %s | Total: %d | Success Rate: %.1f%%",
+		"Target: %s\nElapsed: %s | Total: %d | Success Rate: %.1f%%",
+		targetDisplay,
 		elapsed.Round(time.Second),
 		stats.Total,
 		successRate,
