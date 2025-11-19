@@ -156,7 +156,7 @@ func run(args []string) error {
 
 	var dash *dashboard.Dashboard
 	if cfg.Dashboard {
-		dash, err = dashboard.New(collector)
+		dash, err = dashboard.New(collector, cancel)
 		if err != nil {
 			return err
 		}

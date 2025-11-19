@@ -16,11 +16,12 @@ import (
 
 // Dashboard renders a live terminal UI for load test metrics.
 type Dashboard struct {
-	collector *metrics.Collector
-	ctx       context.Context
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
-	mu        sync.Mutex
+	collector    *metrics.Collector
+	ctx          context.Context
+	cancel       context.CancelFunc
+	shutdownFunc func()
+	wg           sync.WaitGroup
+	mu           sync.Mutex
 
 	// Widgets
 	grid           *ui.Grid
@@ -39,7 +40,7 @@ type Dashboard struct {
 }
 
 // New creates a new Dashboard.
-func New(collector *metrics.Collector) (*Dashboard, error) {
+func New(collector *metrics.Collector, shutdownFunc func()) (*Dashboard, error) {
 	if err := ui.Init(); err != nil {
 		return nil, fmt.Errorf("failed to initialize termui: %w", err)
 	}
@@ -50,6 +51,7 @@ func New(collector *metrics.Collector) (*Dashboard, error) {
 		collector:      collector,
 		ctx:            ctx,
 		cancel:         cancel,
+		shutdownFunc:   shutdownFunc,
 		latencyHistory: make([]float64, 0, 100),
 		rpsHistory:     make([]float64, 0, 100),
 		startTime:      time.Now(),
@@ -196,7 +198,10 @@ func (d *Dashboard) run() {
 
 			switch e.ID {
 			case "q", "<C-c>":
-				return
+				if d.shutdownFunc != nil {
+					d.shutdownFunc()
+				}
+				// Do not return here; wait for Stop() to cancel context
 			case "<Resize>":
 				payload := e.Payload.(ui.Resize)
 				d.grid.SetRect(0, 0, payload.Width, payload.Height)
