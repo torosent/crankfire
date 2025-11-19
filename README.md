@@ -279,36 +279,7 @@ crankfire --target https://api.example.com \
 
 ### Dashboard Layout
 
-```
-┌ Test Summary ──────────────────────────────────────────────────┐
-│ Elapsed: 30s | Total: 3000 | Success Rate: 98.5%               │
-└────────────────────────────────────────────────────────────────┘
-
-┌ Requests Per Second -┐  ┌ Metrics ──────────────────────────────┐
-│ 100.5 RPS            │  │ Total Requests    3000                │
-│ ████████████░░░░░░   │  │ Successes         2955                │
-│ 85%                  │  │ Failures          45                  │
-└──────────────────────┘  │ Success Rate      98.5%               │
-                          │ Min Latency       12.45ms             │
-                          │ Mean Latency      45.23ms             │
-                          │ P99 Latency       156.78ms            │
-                          └───────────────────────────────────────┘
-
-┌ Real-time Latency ─────────────────────────────────────────────┐
-│ Latency (ms)                                                   │
-│ ▂▃▄▅▃▂▃▄▅▆▅▄▃▂▃▄▅▆▇▆▅▄▃▂▃▄▅▆▅▄▃▂                               │
-└────────────────────────────────────────────────────────────────┘
-
-┌ Endpoints ───────────────────────────────────────────────────────────────────┐
-│ list-users  | 60.0% | RPS 240.0 | P99 120.3ms | Err 2 | Status HTTP 404 x2   │
-│ create-order| 40.0% | RPS 160.0 | P99 210.5ms | Err 12 | Status HTTP 503 x12 │
-└──────────────────────────────────────────────────────────────────────────────┘
-
-┌ Status Buckets ────────────────────────────────────────────────┐
-│ HTTP 404 38                                                    │
-│ HTTP 503 7                                                     │
-└────────────────────────────────────────────────────────────────┘
-```
+<img width="1018" height="696" alt="Image" src="https://github.com/user-attachments/assets/4f2a30f1-aed7-4a38-b8bf-e37d37e43611" />
 
 ## Responsible Use and Legal Notice
 
