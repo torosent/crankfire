@@ -156,12 +156,26 @@ func run(args []string) error {
 
 	var dash *dashboard.Dashboard
 	if cfg.Dashboard {
-		dash, err = dashboard.New(collector, cancel)
+		targetURL := cfg.TargetURL
+		if targetURL == "" && len(cfg.Endpoints) > 0 {
+			// Use first endpoint URL if no global target
+			targetURL = cfg.Endpoints[0].URL
+			if targetURL == "" && cfg.Endpoints[0].Path != "" {
+				targetURL = cfg.Endpoints[0].Path
+			}
+		}
+		dash, err = dashboard.New(collector, targetURL, cancel)
 		if err != nil {
 			return err
 		}
 		dash.Start()
-		defer dash.Stop()
+		defer func() {
+			dash.Stop()
+			// Print final report after dashboard closes
+			finalStats := dash.GetFinalStats()
+			fmt.Fprintln(os.Stdout)
+			output.PrintReport(os.Stdout, finalStats)
+		}()
 	}
 
 	var progress *output.ProgressReporter
@@ -179,13 +193,15 @@ func run(args []string) error {
 	// use the correct elapsed time since the test actually began.
 	collector.Start()
 	result := r.Run(ctx)
-	stats := collector.Stats(result.Duration)
 
 	if cfg.JSONOutput {
+		stats := collector.Stats(result.Duration)
 		if err := output.PrintJSONReport(os.Stdout, stats); err != nil {
 			return err
 		}
-	} else {
+	} else if !cfg.Dashboard {
+		// Only print report if not using dashboard (dashboard handles its own report on exit)
+		stats := collector.Stats(result.Duration)
 		output.PrintReport(os.Stdout, stats)
 	}
 
