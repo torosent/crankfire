@@ -30,6 +30,14 @@ cd crankfire
 go build -o build/crankfire ./cmd/crankfire
 ```
 
+### Docker
+
+You can run Crankfire directly from the GitHub Container Registry without installing anything:
+
+```bash
+docker run ghcr.io/torosent/crankfire --target https://example.com --total 100
+```
+
 ## Verify the Installation
 
 ```bash
