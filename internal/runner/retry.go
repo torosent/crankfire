@@ -23,9 +23,9 @@ type FailureLogger interface {
 
 // RetryPolicy configures retry behavior.
 type RetryPolicy struct {
-	MaxAttempts int                                      // total attempts including initial try
-	Delay       time.Duration                            // fixed delay between retries (used if DelayFunc nil)
-	ShouldRetry func(error) bool                         // predicate; if nil, all errors retried
+	MaxAttempts int                                        // total attempts including initial try
+	Delay       time.Duration                              // fixed delay between retries (used if DelayFunc nil)
+	ShouldRetry func(error) bool                           // predicate; if nil, all errors retried
 	DelayFunc   func(attempt int, err error) time.Duration // dynamic backoff; attempt is 1-based
 }
 

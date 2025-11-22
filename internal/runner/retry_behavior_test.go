@@ -10,6 +10,7 @@ import (
 )
 
 type singleAttemptRequester struct{ attempts int }
+
 func (r *singleAttemptRequester) Do(ctx context.Context) error {
 	r.attempts++
 	return errors.New("permanent failure")
@@ -25,9 +26,9 @@ func TestRetryShouldRetryStopsEarly(t *testing.T) {
 	wrapped := runner.WithRetry(req, policy)
 	err := wrapped.Do(context.Background())
 	if err == nil {
-		 t.Fatalf("expected error")
+		t.Fatalf("expected error")
 	}
 	if req.attempts != 1 {
-		 t.Fatalf("expected 1 attempt got %d", req.attempts)
+		t.Fatalf("expected 1 attempt got %d", req.attempts)
 	}
 }
