@@ -21,7 +21,7 @@ func TestPrintReportBasic(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	PrintReport(&buf, stats)
+	PrintReport(&buf, stats, nil)
 
 	output := buf.String()
 	if !strings.Contains(output, "Total Requests") {
@@ -57,7 +57,7 @@ func TestPrintReportIncludesProtocolMetrics(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	PrintReport(&buf, stats)
+	PrintReport(&buf, stats, nil)
 
 	output := buf.String()
 	if !strings.Contains(output, "Protocol Metrics:") {
@@ -101,7 +101,7 @@ func TestPrintJSONReportWithProtocolMetrics(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	err := PrintJSONReport(&buf, stats)
+	err := PrintJSONReport(&buf, stats, nil)
 	if err != nil {
 		t.Fatalf("PrintJSONReport failed: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestPrintReportIncludesEndpointStatusBuckets(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	PrintReport(&buf, stats)
+	PrintReport(&buf, stats, nil)
 	output := buf.String()
 	if !strings.Contains(output, "Status Buckets:") {
 		t.Fatalf("expected status bucket header in output")

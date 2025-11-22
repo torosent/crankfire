@@ -1,0 +1,12 @@
+target: https://httpbin.org/delay/1
+method: GET
+concurrency: 5
+total: 20
+timeout: 5s
+
+# Performance thresholds - test will fail if any threshold is not met
+thresholds:
+  - "http_req_duration:p95 < 3000"   # 95th percentile latency must be under 3000ms
+  - "http_req_duration:p99 < 5000"   # 99th percentile latency must be under 5000ms
+  - "http_req_failed:rate < 0.1"     # Failure rate must be under 10%
+  - "http_requests:rate > 1"         # Must achieve at least 1 request per second
