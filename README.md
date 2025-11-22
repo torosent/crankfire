@@ -26,8 +26,8 @@ See the [full feature overview in the docs](https://torosent.github.io/crankfire
 | **Basic Load Testing** | ✅ | ✅ | ✅ | ✅ |
 | **Authentication** | ✅ | ✅ | ✅ | ✅ |
 | **Data Feeders** | ✅ | ✅ | ✅ | ✅ |
-| **Retries** | ✅ | ❌ | ❌ | ✅ |
 | **Thresholds/Assertions** | ✅ | ✅ | ✅ | ✅ |
+| **Retries** | ✅ | ❌ | ❌ | ❌ |
 | **Protocol-Specific Metrics** | - | Messages sent/received, bytes | Events received, bytes | Calls, responses |
 | **Dashboard Support** | ✅ | ✅ | ✅ | ✅ |
 | **JSON Output** | ✅ | ✅ | ✅ | ✅ |
@@ -88,14 +88,15 @@ crankfire \
   --dashboard
 ```
 
-### With Rate Limiting
+### POST Request
 
 ```bash
 crankfire \
-  --target https://api.example.com \
-  --concurrency 20 \
-  --rate 100 \
-  --duration 30s
+  --target https://api.example.com/users \
+  --method POST \
+  --body '{"name":"crankfire"}' \
+  --header "Content-Type=application/json" \
+  --total 100
 ```
 
 ### With a Config File
@@ -211,6 +212,84 @@ timeout: 5s
 retries: 3
 ```
 
+## Advanced Usage Scenarios
+
+### 1. Realistic Traffic Pattern (Ramp-up & Sustained Load)
+
+Simulate a realistic traffic curve with a warm-up phase followed by a sustained load period.
+
+```yaml
+target: https://api.example.com
+concurrency: 50
+load_patterns:
+  - name: "warmup"
+    type: ramp
+    from_rps: 10
+    to_rps: 100
+    duration: 30s
+  - name: "sustained"
+    type: step
+    steps:
+      - rps: 100
+        duration: 2m
+```
+
+### 2. Multi-Endpoint API Test (Weighted)
+
+Distribute traffic across multiple endpoints to simulate real user behavior (e.g., 80% browsing, 20% purchasing).
+
+```yaml
+target: https://api.example.com
+concurrency: 20
+endpoints:
+  - name: "list-products"
+    weight: 8
+    method: GET
+    path: /products
+  - name: "create-order"
+    weight: 2
+    method: POST
+    path: /orders
+    body: '{"product_id": "123", "quantity": 1}'
+```
+
+### 3. Data-Driven Testing (CSV Feeder)
+
+Inject dynamic data from a CSV file into request bodies or URLs.
+
+**orders.csv**:
+```csv
+product_id,quantity
+101,2
+102,1
+103,5
+```
+
+**config.yaml**:
+```yaml
+target: https://api.example.com/orders
+method: POST
+feeder:
+  type: csv
+  path: ./orders.csv
+body: '{"product_id": "{{.product_id}}", "quantity": {{.quantity}}}'
+```
+
+### 4. gRPC Load Test
+
+Load test a gRPC service using a Protocol Buffers definition.
+
+```yaml
+target: localhost:50051
+protocol: grpc
+grpc:
+  proto_file: ./proto/service.proto
+  service: myapp.OrderService
+  method: CreateOrder
+  message: '{"user_id": "123", "item": "book"}'
+  timeout: 2s
+```
+
 ## Output Examples
 
 ### Human-Readable
@@ -308,36 +387,7 @@ crankfire --target https://api.example.com \
 
 ### Dashboard Layout
 
-```
-┌ Test Summary ──────────────────────────────────────────────────┐
-│ Elapsed: 30s | Total: 3000 | Success Rate: 98.5%               │
-└────────────────────────────────────────────────────────────────┘
-
-┌ Requests Per Second -┐  ┌ Metrics ──────────────────────────────┐
-│ 100.5 RPS            │  │ Total Requests    3000                │
-│ ████████████░░░░░░   │  │ Successes         2955                │
-│ 85%                  │  │ Failures          45                  │
-└──────────────────────┘  │ Success Rate      98.5%               │
-                          │ Min Latency       12.45ms             │
-                          │ Mean Latency      45.23ms             │
-                          │ P99 Latency       156.78ms            │
-                          └───────────────────────────────────────┘
-
-┌ Real-time Latency ─────────────────────────────────────────────┐
-│ Latency (ms)                                                   │
-│ ▂▃▄▅▃▂▃▄▅▆▅▄▃▂▃▄▅▆▇▆▅▄▃▂▃▄▅▆▅▄▃▂                               │
-└────────────────────────────────────────────────────────────────┘
-
-┌ Endpoints ───────────────────────────────────────────────────────────────────┐
-│ list-users  | 60.0% | RPS 240.0 | P99 120.3ms | Err 2 | Status HTTP 404 x2   │
-│ create-order| 40.0% | RPS 160.0 | P99 210.5ms | Err 12 | Status HTTP 503 x12 │
-└──────────────────────────────────────────────────────────────────────────────┘
-
-┌ Status Buckets ────────────────────────────────────────────────┐
-│ HTTP 404 38                                                    │
-│ HTTP 503 7                                                     │
-└────────────────────────────────────────────────────────────────┘
-```
+<img width="1018" height="696" alt="Image" src="https://github.com/user-attachments/assets/4f2a30f1-aed7-4a38-b8bf-e37d37e43611" />
 
 ## Responsible Use and Legal Notice
 
