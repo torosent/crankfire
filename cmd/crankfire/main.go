@@ -184,14 +184,13 @@ func run(args []string) error {
 
 	// Parse and evaluate thresholds
 	var thresholdResults []threshold.Result
-	var thresholdEvaluator *threshold.Evaluator
 	if len(cfg.Thresholds) > 0 {
 		thresholds, err := threshold.ParseMultiple(cfg.Thresholds)
 		if err != nil {
 			return fmt.Errorf("threshold parsing failed: %w", err)
 		}
-		thresholdEvaluator = threshold.NewEvaluator(thresholds)
-		thresholdResults = thresholdEvaluator.Evaluate(stats)
+		evaluator := threshold.NewEvaluator(thresholds)
+		thresholdResults = evaluator.Evaluate(stats)
 	}
 
 	if cfg.JSONOutput {
