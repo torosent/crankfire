@@ -1,3 +1,8 @@
+---
+layout: default
+title: Protocols
+---
+
 # Protocols
 
 Crankfire speaks four protocols out of the box:

@@ -1,3 +1,8 @@
+---
+layout: default
+title: Thresholds Quick Reference
+---
+
 # Thresholds Quick Reference
 
 ## Basic Syntax

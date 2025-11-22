@@ -1,3 +1,8 @@
+---
+layout: default
+title: Data Feeders
+---
+
 # Data Feeders
 
 Data feeders allow you to drive tests with realistic, per-request data from CSV or JSON files. Records are pulled round-robin and exposed as `{{placeholders}}` inside URLs, headers, HTTP bodies, WebSocket/SSE payloads, and gRPC message JSON/metadata.

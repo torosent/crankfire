@@ -1,3 +1,8 @@
+---
+layout: default
+title: Configuration
+---
+
 # Configuration & CLI Reference
 
 Crankfire can be configured entirely via CLI flags, config files, or a combination of both. This page focuses on how to structure configuration and how the important flags work.

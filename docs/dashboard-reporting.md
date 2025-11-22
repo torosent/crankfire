@@ -1,3 +1,8 @@
+---
+layout: default
+title: Dashboard & Reporting
+---
+
 # Dashboard & Reporting
 
 Crankfire is designed to be both human and machine friendly: you can watch tests live in your terminal and also capture detailed JSON reports for automation.

@@ -1,4 +1,11 @@
+---
+layout: default
+title: Thresholds
+---
+
 # Thresholds
+
+> For a quick lookup of syntax and metrics, see the [Thresholds Quick Reference](thresholds-quick-reference.md).
 
 Thresholds allow you to define performance criteria that must be met for a load test to pass. This is essential for CI/CD integration where you want automated tests to fail if performance degrades.
 
