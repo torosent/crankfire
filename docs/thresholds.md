@@ -28,7 +28,7 @@ Measures request latency in milliseconds.
 **Supported aggregates:**
 - `p50` - 50th percentile (median)
 - `p90` - 90th percentile
-- `p95` - 95th percentile (approximated)
+- `p95` - 95th percentile
 - `p99` - 99th percentile
 - `avg` or `mean` - Average latency
 - `min` - Minimum latency

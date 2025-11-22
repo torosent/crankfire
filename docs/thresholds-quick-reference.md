@@ -19,7 +19,7 @@ metric:aggregate operator value
 |-----------|------------|-------------|
 | `p50` | latency | 50th percentile (median) |
 | `p90` | latency | 90th percentile |
-| `p95` | latency | 95th percentile |
+| `p95` | latency | 95th percentile |  
 | `p99` | latency | 99th percentile |
 | `avg` | latency | Average |
 | `min` | latency | Minimum |

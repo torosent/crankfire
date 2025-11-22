@@ -95,7 +95,7 @@ func Parse(s string) (Threshold, error) {
 
 	// Pattern: metric:aggregate operator value
 	// e.g., "http_req_duration:p95 < 500"
-	pattern := regexp.MustCompile(`^([a-z_]+):([a-z0-9]+)\s*([<>=!]+)\s*([0-9.]+)$`)
+	pattern := regexp.MustCompile(`^([a-z_]+):([a-z0-9]+)\s*(<|<=|>|>=|==)\s*([0-9]+\.?[0-9]*|\.[0-9]+)$`)
 	matches := pattern.FindStringSubmatch(s)
 	if matches == nil {
 		return Threshold{}, fmt.Errorf("invalid threshold format: %q (expected format: metric:aggregate operator value, e.g., 'http_req_duration:p95 < 500')", s)
@@ -210,8 +210,7 @@ func extractLatencyMetric(aggregate string, stats metrics.Stats) (float64, error
 	case "p90":
 		return stats.P90LatencyMs, nil
 	case "p95":
-		// Approximate p95 from p90 and p99
-		return (stats.P90LatencyMs + stats.P99LatencyMs) / 2, nil
+		return stats.P95LatencyMs, nil
 	case "p99":
 		return stats.P99LatencyMs, nil
 	case "avg", "mean":
@@ -258,11 +257,11 @@ func compareValues(actual float64, operator string, expected float64) bool {
 	case "<":
 		return actual < expected
 	case "<=":
-		return actual <= expected || math.Abs(actual-expected) < epsilon
+		return actual < expected || math.Abs(actual-expected) < epsilon
 	case ">":
 		return actual > expected
 	case ">=":
-		return actual >= expected || math.Abs(actual-expected) < epsilon
+		return actual > expected || math.Abs(actual-expected) < epsilon
 	case "==":
 		return math.Abs(actual-expected) < epsilon
 	default:

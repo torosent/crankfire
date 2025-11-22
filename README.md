@@ -12,7 +12,7 @@ Use Crankfire when you need more than a simple `curl` loop, but don’t want the
 
 - **Multi‑protocol coverage** – HTTP, WebSocket, SSE, and gRPC share the same configuration and reporting engine (select the protocol mode per run).
 - **Realistic traffic patterns** – Ramp/step/spike load phases plus uniform or Poisson arrivals.
-- **Production‑grade metrics** – HDR histogram percentiles (P50/P90/P99), per‑endpoint stats, and protocol‑specific error buckets.
+- **Production‑grade metrics** – HDR histogram percentiles (P50/P90/P95/P99), per‑endpoint stats, and protocol‑specific error buckets.
 - **Live dashboard or JSON** – Watch tests in your terminal, or export structured JSON for automation.
 - **Auth & data built‑in** – OAuth2/OIDC helpers and CSV/JSON feeders for realistic test data.
 - **Single binary** – Written in Go with minimal runtime dependencies.

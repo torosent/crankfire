@@ -41,6 +41,7 @@ type EndpointStats struct {
 	MeanLatency    time.Duration `json:"-"`
 	P50Latency     time.Duration `json:"-"`
 	P90Latency     time.Duration `json:"-"`
+	P95Latency     time.Duration `json:"-"`
 	P99Latency     time.Duration `json:"-"`
 	RequestsPerSec float64       `json:"requests_per_sec"`
 
@@ -50,6 +51,7 @@ type EndpointStats struct {
 	MeanLatencyMs float64                   `json:"mean_latency_ms"`
 	P50LatencyMs  float64                   `json:"p50_latency_ms"`
 	P90LatencyMs  float64                   `json:"p90_latency_ms"`
+	P95LatencyMs  float64                   `json:"p95_latency_ms"`
 	P99LatencyMs  float64                   `json:"p99_latency_ms"`
 	StatusBuckets map[string]map[string]int `json:"status_buckets,omitempty"`
 }
@@ -218,6 +220,7 @@ func (b *statsBucket) snapshot(elapsed time.Duration) EndpointStats {
 	if b.hist.TotalCount() > 0 {
 		stats.P50Latency = time.Duration(b.hist.ValueAtQuantile(50)) * time.Microsecond
 		stats.P90Latency = time.Duration(b.hist.ValueAtQuantile(90)) * time.Microsecond
+		stats.P95Latency = time.Duration(b.hist.ValueAtQuantile(95)) * time.Microsecond
 		stats.P99Latency = time.Duration(b.hist.ValueAtQuantile(99)) * time.Microsecond
 	}
 
@@ -226,6 +229,7 @@ func (b *statsBucket) snapshot(elapsed time.Duration) EndpointStats {
 	stats.MeanLatencyMs = float64(stats.MeanLatency) / float64(time.Millisecond)
 	stats.P50LatencyMs = float64(stats.P50Latency) / float64(time.Millisecond)
 	stats.P90LatencyMs = float64(stats.P90Latency) / float64(time.Millisecond)
+	stats.P95LatencyMs = float64(stats.P95Latency) / float64(time.Millisecond)
 	stats.P99LatencyMs = float64(stats.P99Latency) / float64(time.Millisecond)
 
 	// Only calculate RPS if enough time has elapsed to avoid unrealistic values.

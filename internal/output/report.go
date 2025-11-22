@@ -25,6 +25,7 @@ func PrintReport(w io.Writer, stats metrics.Stats, thresholdResults []threshold.
 	fmt.Fprintf(w, "  Mean:            %s\n", stats.MeanLatency)
 	fmt.Fprintf(w, "  P50:             %s\n", stats.P50Latency)
 	fmt.Fprintf(w, "  P90:             %s\n", stats.P90Latency)
+	fmt.Fprintf(w, "  P95:             %s\n", stats.P95Latency)
 	fmt.Fprintf(w, "  P99:             %s\n", stats.P99Latency)
 	if len(stats.StatusBuckets) > 0 {
 		fmt.Fprintln(w, "\nStatus Buckets:")
