@@ -157,12 +157,24 @@ func run(args []string) error {
 
 	var dash *dashboard.Dashboard
 	if cfg.Dashboard {
-		dash, err = dashboard.New(collector, cfg.TargetURL, cancel)
+		targetURL := cfg.TargetURL
+		if targetURL == "" && len(cfg.Endpoints) > 0 {
+			// Use first endpoint URL if no global target
+			targetURL = cfg.Endpoints[0].URL
+			if targetURL == "" && cfg.Endpoints[0].Path != "" {
+				targetURL = cfg.Endpoints[0].Path
+			}
+		}
+		dash, err = dashboard.New(collector, targetURL, cancel)
 		if err != nil {
 			return err
 		}
 		dash.Start()
-		defer dash.Stop()
+		defer func() {
+			if dash != nil {
+				dash.Stop()
+			}
+		}()
 	}
 
 	var progress *output.ProgressReporter
@@ -180,6 +192,12 @@ func run(args []string) error {
 	// use the correct elapsed time since the test actually began.
 	collector.Start()
 	result := r.Run(ctx)
+
+	if dash != nil {
+		dash.Stop()
+		dash = nil
+	}
+
 	stats := collector.Stats(result.Duration)
 
 	// Parse and evaluate thresholds
