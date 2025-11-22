@@ -366,7 +366,13 @@ crankfire --target https://example.com --total 100 --json-output
         "http": {
           "503": 8
         }
-  # HTML Report
+      }
+    }
+  }
+}
+```
+
+### HTML Report
 
 Generate a standalone HTML report with interactive charts and detailed statistics.
 
@@ -381,11 +387,9 @@ The report includes:
 - **Threshold Results**: Pass/fail status for configured thresholds
 - **Endpoint Breakdown**: Per-endpoint performance metrics
 
-##    }
-    }
-  }
-}
-```
+<img width="1455" height="858" alt="Image1" src="https://github.com/user-attachments/assets/15837533-7e60-4553-9104-4bfdf16b9d79" />
+
+<img width="1455" height="858" alt="Image2" src="https://github.com/user-attachments/assets/f8b81f9a-0b16-41b7-9654-49cc47ac9af4" />
 
 ## Live Terminal Dashboard
 
