@@ -181,3 +181,66 @@ func TestCollectorTracksExactStatusBuckets(t *testing.T) {
 		t.Fatalf("expected endpoint 404 bucket to equal 2, got %d", endpointBuckets["404"])
 	}
 }
+
+func TestCollector_Snapshot(t *testing.T) {
+	c := metrics.NewCollector()
+	c.Start()
+
+	// Record some initial requests
+	c.RecordRequest(10*time.Millisecond, nil, nil)
+	c.RecordRequest(20*time.Millisecond, nil, nil)
+	c.RecordRequest(30*time.Millisecond, errors.New("error"), nil)
+
+	// Take first snapshot
+	time.Sleep(150 * time.Millisecond) // Ensure elapsed > minElapsedForRPS
+	c.Snapshot()
+
+	// Record more requests
+	c.RecordRequest(15*time.Millisecond, nil, nil)
+	c.RecordRequest(25*time.Millisecond, nil, nil)
+
+	// Take second snapshot
+	time.Sleep(150 * time.Millisecond)
+	c.Snapshot()
+
+	history := c.History()
+
+	if len(history) != 2 {
+		t.Fatalf("expected 2 snapshots in history, got %d", len(history))
+	}
+
+	// Check first snapshot
+	snapshot1 := history[0]
+	if snapshot1.TotalRequests != 3 {
+		t.Errorf("snapshot1: expected 3 total requests, got %d", snapshot1.TotalRequests)
+	}
+	if snapshot1.SuccessfulRequests != 2 {
+		t.Errorf("snapshot1: expected 2 successful requests, got %d", snapshot1.SuccessfulRequests)
+	}
+	if snapshot1.Errors != 1 {
+		t.Errorf("snapshot1: expected 1 error, got %d", snapshot1.Errors)
+	}
+	if snapshot1.CurrentRPS <= 0 {
+		t.Errorf("snapshot1: expected RPS > 0, got %f", snapshot1.CurrentRPS)
+	}
+
+	// Check second snapshot
+	snapshot2 := history[1]
+	if snapshot2.TotalRequests != 5 {
+		t.Errorf("snapshot2: expected 5 total requests, got %d", snapshot2.TotalRequests)
+	}
+	if snapshot2.SuccessfulRequests != 4 {
+		t.Errorf("snapshot2: expected 4 successful requests, got %d", snapshot2.SuccessfulRequests)
+	}
+	if snapshot2.Errors != 1 {
+		t.Errorf("snapshot2: expected 1 error, got %d", snapshot2.Errors)
+	}
+	if snapshot2.CurrentRPS <= 0 {
+		t.Errorf("snapshot2: expected RPS > 0, got %f", snapshot2.CurrentRPS)
+	}
+
+	// Verify timestamps are increasing
+	if !snapshot2.Timestamp.After(snapshot1.Timestamp) {
+		t.Errorf("snapshot2 timestamp should be after snapshot1")
+	}
+}

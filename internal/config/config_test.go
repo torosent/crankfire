@@ -896,3 +896,67 @@ func TestCLIOverridesFeeder(t *testing.T) {
 		}
 	})
 }
+
+func TestHTMLOutputFlag(t *testing.T) {
+	t.Run("HTML output flag from CLI", func(t *testing.T) {
+		loader := config.NewLoader()
+		cfg, err := loader.Load([]string{
+			"--target", "http://example.com",
+			"--html-output", "report.html",
+		})
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+
+		if cfg.HTMLOutput != "report.html" {
+			t.Errorf("HTMLOutput = %q, want report.html", cfg.HTMLOutput)
+		}
+	})
+
+	t.Run("HTML output from config file", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.json")
+		content := `{
+			"target": "https://api.example.com",
+			"html_output": "/tmp/results.html"
+		}`
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		loader := config.NewLoader()
+		cfg, err := loader.Load([]string{"--config", path})
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+
+		if cfg.HTMLOutput != "/tmp/results.html" {
+			t.Errorf("HTMLOutput = %q, want /tmp/results.html", cfg.HTMLOutput)
+		}
+	})
+
+	t.Run("CLI flag overrides config", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, "config.json")
+		content := `{
+			"target": "https://api.example.com",
+			"html_output": "/tmp/config.html"
+		}`
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		loader := config.NewLoader()
+		cfg, err := loader.Load([]string{
+			"--config", path,
+			"--html-output", "/tmp/cli.html",
+		})
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+
+		if cfg.HTMLOutput != "/tmp/cli.html" {
+			t.Errorf("HTMLOutput = %q, want /tmp/cli.html", cfg.HTMLOutput)
+		}
+	})
+}

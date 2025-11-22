@@ -14,6 +14,21 @@ const (
 	minElapsedForRPS = 100 * time.Millisecond
 )
 
+// DataPoint represents a snapshot of metrics at a specific point in time.
+type DataPoint struct {
+	Timestamp          time.Time     `json:"timestamp"`
+	TotalRequests      int64         `json:"total_requests"`
+	SuccessfulRequests int64         `json:"successful_requests"`
+	Errors             int64         `json:"errors"`
+	CurrentRPS         float64       `json:"current_rps"`
+	P50Latency         time.Duration `json:"-"`
+	P95Latency         time.Duration `json:"-"`
+	P99Latency         time.Duration `json:"-"`
+	P50LatencyMs       float64       `json:"p50_latency_ms"`
+	P95LatencyMs       float64       `json:"p95_latency_ms"`
+	P99LatencyMs       float64       `json:"p99_latency_ms"`
+}
+
 type Collector struct {
 	mu            sync.Mutex
 	total         *statsBucket
@@ -21,6 +36,15 @@ type Collector struct {
 	customMetrics map[string]map[string]interface{} // protocol -> aggregated metrics
 	startTime     time.Time
 	started       bool
+	history       []DataPoint
+	lastSnapshot  snapshotState
+}
+
+type snapshotState struct {
+	timestamp     time.Time
+	totalRequests int64
+	successCount  int64
+	failureCount  int64
 }
 
 // RequestMetadata annotates a measurement with optional labels.
@@ -71,6 +95,7 @@ func NewCollector() *Collector {
 		total:         newStatsBucket(),
 		endpoints:     make(map[string]*statsBucket),
 		customMetrics: make(map[string]map[string]interface{}),
+		history:       []DataPoint{},
 	}
 }
 
@@ -313,5 +338,87 @@ func copyMetrics(src map[string]interface{}) map[string]interface{} {
 	for k, v := range src {
 		result[k] = v
 	}
+	return result
+}
+
+// Snapshot records the current state of metrics as a DataPoint and appends it to history.
+// This method is thread-safe and can be called periodically to build time-series data.
+func (c *Collector) Snapshot() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	now := time.Now()
+
+	// Calculate elapsed time since start or last snapshot
+	var elapsed time.Duration
+	if c.lastSnapshot.timestamp.IsZero() {
+		if c.started {
+			elapsed = now.Sub(c.startTime)
+		} else {
+			elapsed = 0
+		}
+	} else {
+		elapsed = now.Sub(c.lastSnapshot.timestamp)
+	}
+
+	// Get current totals
+	currentTotal := c.total.successes + c.total.failures
+	currentSuccess := c.total.successes
+	currentFailures := c.total.failures
+
+	// Calculate delta for RPS
+	var deltaRequests int64
+	if !c.lastSnapshot.timestamp.IsZero() {
+		deltaRequests = currentTotal - c.lastSnapshot.totalRequests
+	} else {
+		deltaRequests = currentTotal
+	}
+
+	// Calculate current RPS
+	var currentRPS float64
+	if elapsed >= minElapsedForRPS && elapsed.Seconds() > 0 {
+		currentRPS = float64(deltaRequests) / elapsed.Seconds()
+	}
+
+	// Get percentile data
+	var p50, p95, p99 time.Duration
+	if c.total.hist.TotalCount() > 0 {
+		p50 = time.Duration(c.total.hist.ValueAtQuantile(50)) * time.Microsecond
+		p95 = time.Duration(c.total.hist.ValueAtQuantile(95)) * time.Microsecond
+		p99 = time.Duration(c.total.hist.ValueAtQuantile(99)) * time.Microsecond
+	}
+
+	dataPoint := DataPoint{
+		Timestamp:          now,
+		TotalRequests:      currentTotal,
+		SuccessfulRequests: currentSuccess,
+		Errors:             currentFailures,
+		CurrentRPS:         currentRPS,
+		P50Latency:         p50,
+		P95Latency:         p95,
+		P99Latency:         p99,
+		P50LatencyMs:       float64(p50) / float64(time.Millisecond),
+		P95LatencyMs:       float64(p95) / float64(time.Millisecond),
+		P99LatencyMs:       float64(p99) / float64(time.Millisecond),
+	}
+
+	c.history = append(c.history, dataPoint)
+
+	// Update last snapshot state
+	c.lastSnapshot = snapshotState{
+		timestamp:     now,
+		totalRequests: currentTotal,
+		successCount:  currentSuccess,
+		failureCount:  currentFailures,
+	}
+}
+
+// History returns a copy of the recorded history data points.
+func (c *Collector) History() []DataPoint {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	result := make([]DataPoint, len(c.history))
+	copy(result, c.history)
 	return result
 }

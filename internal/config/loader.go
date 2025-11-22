@@ -109,6 +109,7 @@ func configureFlags(flags *pflag.FlagSet) {
 	flags.Bool("json-output", false, "Emit JSON formatted output")
 	flags.Bool("dashboard", false, "Show live terminal dashboard with metrics")
 	flags.Bool("log-errors", false, "Log each failed request to stderr")
+	flags.String("html-output", "", "Generate HTML report to the specified file path")
 	flags.String("config", "", "Path to configuration file (JSON or YAML)")
 
 	flags.String("feeder-path", "", "Path to CSV or JSON file containing data for per-request injection")
@@ -262,6 +263,14 @@ func applyConfigSettings(cfg *Config, settings map[string]interface{}) error {
 			return fmt.Errorf("logErrors: %w", err)
 		}
 		cfg.LogErrors = val
+	}
+
+	if raw, ok := lookupSetting(settings, "htmloutput", "html_output", "html-output"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return fmt.Errorf("htmlOutput: %w", err)
+		}
+		cfg.HTMLOutput = strings.TrimSpace(val)
 	}
 
 	if raw, ok := lookupSetting(settings, "loadpatterns", "load_patterns", "load-patterns"); ok {
@@ -457,6 +466,13 @@ func applyFlagOverrides(cfg *Config, fs *pflag.FlagSet) error {
 			return err
 		}
 		cfg.LogErrors = val
+	}
+	if fs.Changed("html-output") {
+		val, err := fs.GetString("html-output")
+		if err != nil {
+			return err
+		}
+		cfg.HTMLOutput = strings.TrimSpace(val)
 	}
 
 	vals, err := fs.GetStringSlice("header")

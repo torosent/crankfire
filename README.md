@@ -30,6 +30,7 @@ See the [full feature overview in the docs](https://torosent.github.io/crankfire
 | **Retries** | ✅ | ❌ | ❌ | ❌ |
 | **Protocol-Specific Metrics** | - | Messages sent/received, bytes | Events received, bytes | Calls, responses |
 | **Dashboard Support** | ✅ | ✅ | ✅ | ✅ |
+| **HTML Report** | ✅ | ✅ | ✅ | ✅ |
 | **JSON Output** | ✅ | ✅ | ✅ | ✅ |
 | **Rate Limiting** | ✅ | ✅ | ✅ | ✅ |
 | **Arrival Models** | ✅ | ✅ | ✅ | ✅ |
@@ -105,6 +106,12 @@ crankfire \
 crankfire --config loadtest.yaml
 ```
 
+### Generate HTML Report
+
+```bash
+crankfire --target https://example.com --total 1000 --html-output report.html
+```
+
 See the [Getting Started guide](https://torosent.github.io/crankfire/getting-started.html) for a step‑by‑step walkthrough.
 
 ## Command-Line Options (Overview)
@@ -123,6 +130,7 @@ See the [Getting Started guide](https://torosent.github.io/crankfire/getting-sta
 | `--timeout` | Per-request timeout | 30s |
 | `--retries` | Number of retry attempts | 0 |
 | `--arrival-model` | Arrival model (`uniform` or `poisson`) | uniform |
+| `--html-output` | Generate HTML report to the specified file path | - |
 | `--json-output` | Output results as JSON | false |
 | `--dashboard` | Show live terminal dashboard | false |
 | `--log-errors` | Log each failed request to stderr | false |
@@ -358,7 +366,22 @@ crankfire --target https://example.com --total 100 --json-output
         "http": {
           "503": 8
         }
-      }
+  # HTML Report
+
+Generate a standalone HTML report with interactive charts and detailed statistics.
+
+```bash
+crankfire --target https://example.com --total 1000 --html-output report.html
+```
+
+The report includes:
+- **Summary Cards**: Key metrics at a glance
+- **Interactive Charts**: RPS and latency percentiles over time
+- **Latency Statistics**: Detailed percentile breakdown
+- **Threshold Results**: Pass/fail status for configured thresholds
+- **Endpoint Breakdown**: Per-endpoint performance metrics
+
+##    }
     }
   }
 }

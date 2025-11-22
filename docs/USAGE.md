@@ -527,6 +527,23 @@ crankfire --target https://api.example.com \
   }'
 ```
 
+### HTML Report Generation
+
+Generate a standalone HTML report with interactive charts and detailed statistics:
+
+```bash
+crankfire --target https://api.example.com \
+  --total 1000 \
+  --html-output report.html
+```
+
+The report includes:
+- **Summary Cards**: Key metrics at a glance
+- **Interactive Charts**: RPS and latency percentiles over time
+- **Latency Statistics**: Detailed percentile breakdown
+- **Threshold Results**: Pass/fail status for configured thresholds
+- **Endpoint Breakdown**: Per-endpoint performance metrics
+
 ## Monitoring and Debugging
 
 ### Verbose Failure Logging

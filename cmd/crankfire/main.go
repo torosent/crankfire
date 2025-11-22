@@ -107,14 +107,22 @@ func run(args []string) error {
 		fallthrough
 	default:
 		// HTTP protocol
-		builder, err := newHTTPRequestBuilder(cfg, authProvider, dataFeeder)
-		if err != nil {
-			return err
+		var builder *httpclient.RequestBuilder
+		if cfg.TargetURL != "" {
+			var err error
+			builder, err = newHTTPRequestBuilder(cfg, authProvider, dataFeeder)
+			if err != nil {
+				return err
+			}
 		}
 
 		selector, err := newEndpointSelector(cfg)
 		if err != nil {
 			return err
+		}
+
+		if builder == nil && selector == nil {
+			return fmt.Errorf("target URL is required")
 		}
 
 		client := httpclient.NewClient(cfg.Timeout)
@@ -191,7 +199,40 @@ func run(args []string) error {
 	// This ensures dashboard/progress reporters (which may have been created earlier)
 	// use the correct elapsed time since the test actually began.
 	collector.Start()
+
+	// Start periodic snapshots for HTML report history (if enabled)
+	var snapshotTicker *time.Ticker
+	var snapshotDone chan struct{}
+	var snapshotStop chan struct{}
+	if cfg.HTMLOutput != "" {
+		snapshotTicker = time.NewTicker(1 * time.Second)
+		snapshotDone = make(chan struct{})
+		snapshotStop = make(chan struct{})
+		go func() {
+			defer close(snapshotDone)
+			for {
+				select {
+				case <-snapshotTicker.C:
+					collector.Snapshot()
+				case <-snapshotStop:
+					return
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+	}
+
 	result := r.Run(ctx)
+
+	// Stop snapshot collection
+	if snapshotTicker != nil {
+		snapshotTicker.Stop()
+		close(snapshotStop)
+		<-snapshotDone
+		// Take one final snapshot after the test completes
+		collector.Snapshot()
+	}
 
 	if dash != nil {
 		dash.Stop()
@@ -217,6 +258,39 @@ func run(args []string) error {
 		}
 	} else {
 		output.PrintReport(os.Stdout, stats, thresholdResults)
+	}
+
+	// Generate HTML report if requested
+	if cfg.HTMLOutput != "" {
+		history := collector.History()
+		file, err := os.Create(cfg.HTMLOutput)
+		if err != nil {
+			return fmt.Errorf("failed to create HTML report file: %w", err)
+		}
+		defer file.Close()
+
+		// Prepare metadata
+		testedEndpoints := make([]output.TestedEndpoint, len(cfg.Endpoints))
+		for i, ep := range cfg.Endpoints {
+			testedEndpoints[i] = output.TestedEndpoint{
+				Name:   ep.Name,
+				Method: ep.Method,
+				URL:    ep.URL,
+			}
+			if testedEndpoints[i].URL == "" {
+				testedEndpoints[i].URL = ep.Path
+			}
+		}
+
+		metadata := output.ReportMetadata{
+			TargetURL:       cfg.TargetURL,
+			TestedEndpoints: testedEndpoints,
+		}
+
+		if err := output.GenerateHTMLReport(file, stats, history, thresholdResults, metadata); err != nil {
+			return fmt.Errorf("failed to generate HTML report: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "\nHTML report generated: %s\n", cfg.HTMLOutput)
 	}
 
 	// Check if any thresholds failed
