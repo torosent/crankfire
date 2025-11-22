@@ -57,7 +57,7 @@ func TestRetryExceedsMaxAttempts(t *testing.T) {
 
 	policy := runner.RetryPolicy{
 		MaxAttempts: 3,
-		DelayFunc: func(attempt int, err error) time.Duration { return time.Millisecond },
+		DelayFunc:   func(attempt int, err error) time.Duration { return time.Millisecond },
 	}
 
 	r := runner.New(runner.Options{

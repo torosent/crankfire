@@ -40,4 +40,5 @@ If you have ever stitched together multiple tools or scripts to run distributed 
 - [Authentication](authentication.md)
 - [Data Feeders](feeders.md)
 - [Protocols](protocols.md) (HTTP, WebSocket, SSE, gRPC)
+- [Thresholds & Assertions](thresholds.md)
 - [Dashboard & Reporting](dashboard-reporting.md)

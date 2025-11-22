@@ -41,6 +41,7 @@ type Config struct {
 	WebSocket    WebSocketConfig   `mapstructure:"websocket"`
 	SSE          SSEConfig         `mapstructure:"sse"`
 	GRPC         GRPCConfig        `mapstructure:"grpc"`
+	Thresholds   []string          `mapstructure:"thresholds"`
 }
 
 type LoadPatternType string

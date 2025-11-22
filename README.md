@@ -12,7 +12,7 @@ Use Crankfire when you need more than a simple `curl` loop, but don’t want the
 
 - **Multi‑protocol coverage** – HTTP, WebSocket, SSE, and gRPC share the same configuration and reporting engine (select the protocol mode per run).
 - **Realistic traffic patterns** – Ramp/step/spike load phases plus uniform or Poisson arrivals.
-- **Production‑grade metrics** – HDR histogram percentiles (P50/P90/P99), per‑endpoint stats, and protocol‑specific error buckets.
+- **Production‑grade metrics** – HDR histogram percentiles (P50/P90/P95/P99), per‑endpoint stats, and protocol‑specific error buckets.
 - **Live dashboard or JSON** – Watch tests in your terminal, or export structured JSON for automation.
 - **Auth & data built‑in** – OAuth2/OIDC helpers and CSV/JSON feeders for realistic test data.
 - **Single binary** – Written in Go with minimal runtime dependencies.
@@ -26,6 +26,7 @@ See the [full feature overview in the docs](https://torosent.github.io/crankfire
 | **Basic Load Testing** | ✅ | ✅ | ✅ | ✅ |
 | **Authentication** | ✅ | ✅ | ✅ | ✅ |
 | **Data Feeders** | ✅ | ✅ | ✅ | ✅ |
+| **Thresholds/Assertions** | ✅ | ✅ | ✅ | ✅ |
 | **Retries** | ✅ | ❌ | ❌ | ❌ |
 | **Protocol-Specific Metrics** | - | Messages sent/received, bytes | Events received, bytes | Calls, responses |
 | **Dashboard Support** | ✅ | ✅ | ✅ | ✅ |
@@ -143,8 +144,36 @@ See the [Getting Started guide](https://torosent.github.io/crankfire/getting-sta
 | `--grpc-timeout` | gRPC call timeout | 30s |
 | `--grpc-tls` | Use TLS for gRPC | false |
 | `--grpc-insecure` | Skip TLS certificate verification | false |
+| `--threshold` | Performance threshold (repeatable, e.g., `http_req_duration:p95 < 500`) | - |
 
 For a complete CLI reference and configuration guide, see [Configuration & CLI Reference](https://torosent.github.io/crankfire/configuration.html).
+
+## Thresholds (CI/CD Integration)
+
+Define pass/fail criteria for your load tests. Perfect for catching performance regressions in CI pipelines.
+
+```bash
+crankfire --target https://api.example.com \
+  --concurrency 50 \
+  --duration 1m \
+  --threshold "http_req_duration:p95 < 500" \
+  --threshold "http_req_failed:rate < 0.01" \
+  --threshold "http_requests:rate > 100"
+```
+
+Or in a config file:
+
+```yaml
+target: https://api.example.com
+concurrency: 50
+duration: 1m
+thresholds:
+  - "http_req_duration:p95 < 500"   # 95th percentile under 500ms
+  - "http_req_failed:rate < 0.01"   # Less than 1% failures
+  - "http_requests:rate > 100"      # At least 100 RPS
+```
+
+The test exits with code 1 if any threshold fails, making it ideal for CI/CD gates. See [Thresholds Documentation](https://torosent.github.io/crankfire/thresholds.html) for details.
 
 ## Configuration File
 

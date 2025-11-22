@@ -8,10 +8,11 @@ import (
 	"strings"
 
 	"github.com/torosent/crankfire/internal/metrics"
+	"github.com/torosent/crankfire/internal/threshold"
 )
 
 // PrintReport outputs a human-readable summary report.
-func PrintReport(w io.Writer, stats metrics.Stats) {
+func PrintReport(w io.Writer, stats metrics.Stats, thresholdResults []threshold.Result) {
 	fmt.Fprintln(w, "\n--- Load Test Results ---")
 	fmt.Fprintf(w, "Total Requests:    %d\n", stats.Total)
 	fmt.Fprintf(w, "Successful:        %d\n", stats.Successes)
@@ -24,10 +25,23 @@ func PrintReport(w io.Writer, stats metrics.Stats) {
 	fmt.Fprintf(w, "  Mean:            %s\n", stats.MeanLatency)
 	fmt.Fprintf(w, "  P50:             %s\n", stats.P50Latency)
 	fmt.Fprintf(w, "  P90:             %s\n", stats.P90Latency)
+	fmt.Fprintf(w, "  P95:             %s\n", stats.P95Latency)
 	fmt.Fprintf(w, "  P99:             %s\n", stats.P99Latency)
 	if len(stats.StatusBuckets) > 0 {
 		fmt.Fprintln(w, "\nStatus Buckets:")
 		writeStatusBuckets(w, stats.StatusBuckets, "  ")
+	}
+
+	if len(thresholdResults) > 0 {
+		fmt.Fprintln(w, "\nThresholds:")
+		passCount := 0
+		for _, result := range thresholdResults {
+			fmt.Fprintf(w, "  %s\n", result.Message)
+			if result.Pass {
+				passCount++
+			}
+		}
+		fmt.Fprintf(w, "\nThreshold Summary: %d/%d passed\n", passCount, len(thresholdResults))
 	}
 
 	if len(stats.Endpoints) > 0 {
@@ -86,11 +100,64 @@ func PrintReport(w io.Writer, stats metrics.Stats) {
 	}
 }
 
+// ThresholdResultJSON represents a threshold result in JSON format.
+type ThresholdResultJSON struct {
+	Threshold string  `json:"threshold"`
+	Metric    string  `json:"metric"`
+	Aggregate string  `json:"aggregate"`
+	Operator  string  `json:"operator"`
+	Expected  float64 `json:"expected"`
+	Actual    float64 `json:"actual"`
+	Pass      bool    `json:"pass"`
+}
+
+// JSONReport wraps stats and threshold results for JSON output.
+type JSONReport struct {
+	metrics.Stats
+	Thresholds *ThresholdSummary `json:"thresholds,omitempty"`
+}
+
+// ThresholdSummary contains threshold evaluation results.
+type ThresholdSummary struct {
+	Total   int                   `json:"total"`
+	Passed  int                   `json:"passed"`
+	Failed  int                   `json:"failed"`
+	Results []ThresholdResultJSON `json:"results"`
+}
+
 // PrintJSONReport outputs a JSON-formatted report.
-func PrintJSONReport(w io.Writer, stats metrics.Stats) error {
+func PrintJSONReport(w io.Writer, stats metrics.Stats, thresholdResults []threshold.Result) error {
+	report := JSONReport{
+		Stats: stats,
+	}
+
+	if len(thresholdResults) > 0 {
+		summary := &ThresholdSummary{
+			Total:   len(thresholdResults),
+			Results: make([]ThresholdResultJSON, len(thresholdResults)),
+		}
+		for i, tr := range thresholdResults {
+			summary.Results[i] = ThresholdResultJSON{
+				Threshold: tr.Threshold.Raw,
+				Metric:    tr.Threshold.Metric,
+				Aggregate: tr.Threshold.Aggregate,
+				Operator:  tr.Threshold.Operator,
+				Expected:  tr.Threshold.Value,
+				Actual:    tr.Actual,
+				Pass:      tr.Pass,
+			}
+			if tr.Pass {
+				summary.Passed++
+			} else {
+				summary.Failed++
+			}
+		}
+		report.Thresholds = summary
+	}
+
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	return enc.Encode(stats)
+	return enc.Encode(report)
 }
 
 func writeStatusBuckets(w io.Writer, buckets map[string]map[string]int, indent string) {

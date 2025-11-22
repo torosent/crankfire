@@ -129,6 +129,7 @@ func configureFlags(flags *pflag.FlagSet) {
 	flags.Duration("grpc-timeout", 30*time.Second, "gRPC per-call timeout")
 	flags.Bool("grpc-tls", false, "Use TLS for gRPC connection")
 	flags.Bool("grpc-insecure", false, "Skip TLS verification for gRPC")
+	flags.StringSlice("threshold", nil, "Performance thresholds (repeatable, e.g., 'http_req_duration:p95 < 500')")
 }
 
 func displayHelp(cmd *cobra.Command) {
@@ -343,6 +344,14 @@ func applyConfigSettings(cfg *Config, settings map[string]interface{}) error {
 			return fmt.Errorf("grpc: %w", err)
 		}
 		cfg.GRPC = grpc
+	}
+
+	if raw, ok := lookupSetting(settings, "thresholds"); ok {
+		thresholds, err := asStringSlice(raw)
+		if err != nil {
+			return fmt.Errorf("thresholds: %w", err)
+		}
+		cfg.Thresholds = thresholds
 	}
 
 	return nil
@@ -590,6 +599,13 @@ func applyFlagOverrides(cfg *Config, fs *pflag.FlagSet) error {
 			return err
 		}
 		cfg.GRPC.Insecure = val
+	}
+	if fs.Changed("threshold") {
+		val, err := fs.GetStringSlice("threshold")
+		if err != nil {
+			return err
+		}
+		cfg.Thresholds = val
 	}
 
 	return nil

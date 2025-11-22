@@ -22,6 +22,7 @@ import (
 	"github.com/torosent/crankfire/internal/metrics"
 	"github.com/torosent/crankfire/internal/output"
 	"github.com/torosent/crankfire/internal/runner"
+	"github.com/torosent/crankfire/internal/threshold"
 )
 
 // makeHeaders converts a map[string]string to http.Header
@@ -170,11 +171,9 @@ func run(args []string) error {
 		}
 		dash.Start()
 		defer func() {
-			dash.Stop()
-			// Print final report after dashboard closes
-			finalStats := dash.GetFinalStats()
-			fmt.Fprintln(os.Stdout)
-			output.PrintReport(os.Stdout, finalStats)
+			if dash != nil {
+				dash.Stop()
+			}
 		}()
 	}
 
@@ -194,15 +193,43 @@ func run(args []string) error {
 	collector.Start()
 	result := r.Run(ctx)
 
+	if dash != nil {
+		dash.Stop()
+		dash = nil
+	}
+
+	stats := collector.Stats(result.Duration)
+
+	// Parse and evaluate thresholds
+	var thresholdResults []threshold.Result
+	if len(cfg.Thresholds) > 0 {
+		thresholds, err := threshold.ParseMultiple(cfg.Thresholds)
+		if err != nil {
+			return fmt.Errorf("threshold parsing failed: %w", err)
+		}
+		evaluator := threshold.NewEvaluator(thresholds)
+		thresholdResults = evaluator.Evaluate(stats)
+	}
+
 	if cfg.JSONOutput {
-		stats := collector.Stats(result.Duration)
-		if err := output.PrintJSONReport(os.Stdout, stats); err != nil {
+		if err := output.PrintJSONReport(os.Stdout, stats, thresholdResults); err != nil {
 			return err
 		}
-	} else if !cfg.Dashboard {
-		// Only print report if not using dashboard (dashboard handles its own report on exit)
-		stats := collector.Stats(result.Duration)
-		output.PrintReport(os.Stdout, stats)
+	} else {
+		output.PrintReport(os.Stdout, stats, thresholdResults)
+	}
+
+	// Check if any thresholds failed
+	thresholdsFailed := false
+	for _, tr := range thresholdResults {
+		if !tr.Pass {
+			thresholdsFailed = true
+			break
+		}
+	}
+
+	if thresholdsFailed {
+		return fmt.Errorf("one or more thresholds failed")
 	}
 
 	if result.Errors > 0 {
