@@ -1,20 +1,12 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
-# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
-
 version: 2
 updates:
-  # Maintain dependencies for Go modules
   - package-ecosystem: "gomod"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
       time: "09:00"
-    # Set a maximum number of open pull requests for version updates
     open-pull-requests-limit: 5
-    # Group minor and patch updates together
     groups:
       go-dependencies:
         patterns:
@@ -22,17 +14,13 @@ updates:
         update-types:
           - "minor"
           - "patch"
-    # Customize commit messages
     commit-message:
       prefix: "chore(deps)"
       include: "scope"
-    # Add labels to pull requests
     labels:
       - "dependencies"
       - "go"
-    # Enable version updates for indirect dependencies
-    versioning-strategy: increase
-    # Ignore specific dependencies if needed (uncomment and customize as needed)
+    # Note: indirect dependencies are updated automatically by gomod tooling
     # ignore:
     #   - dependency-name: "github.com/example/dependency"
     #     versions: ["1.x"]
