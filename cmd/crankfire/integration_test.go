@@ -249,3 +249,64 @@ func TestIntegration_JSONOutput(t *testing.T) {
 
 	t.Logf("JSON output test passed: all expected fields present")
 }
+
+// TestIntegration_HTMLReportGeneration tests end-to-end HTML report generation
+func TestIntegration_HTMLReportGeneration(t *testing.T) {
+	// Create test server
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(10 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"success":true}`))
+	}))
+	defer server.Close()
+
+	// Create temporary HTML report file
+	reportPath := t.TempDir() + "/test-report.html"
+
+	// Run with HTML output
+	args := []string{
+		"--target", server.URL,
+		"--concurrency", "2",
+		"--total", "10",
+		"--html-output", reportPath,
+	}
+
+	// Execute the test
+	if err := run(args); err != nil {
+		t.Fatalf("run() failed: %v", err)
+	}
+
+	// Verify HTML file was created
+	if _, err := os.Stat(reportPath); os.IsNotExist(err) {
+		t.Fatalf("HTML report file was not created: %s", reportPath)
+	}
+
+	// Read and verify HTML content
+	content, err := os.ReadFile(reportPath)
+	if err != nil {
+		t.Fatalf("Failed to read HTML report: %v", err)
+	}
+
+	// Verify key HTML elements
+	requiredElements := []string{
+		"<!DOCTYPE html>",
+		"Crankfire Load Test Report",
+		"Total Requests",
+		"Successful",
+		"Failed",
+		"Latency Statistics",
+	}
+
+	for _, elem := range requiredElements {
+		if !bytes.Contains(content, []byte(elem)) {
+			t.Errorf("HTML report missing required element: %s", elem)
+		}
+	}
+
+	// Verify data is present
+	if !bytes.Contains(content, []byte("10")) { // Total requests
+		t.Error("HTML report missing request count")
+	}
+
+	t.Logf("HTML report generation test passed: %s created successfully", reportPath)
+}

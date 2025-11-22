@@ -31,6 +31,7 @@ type Config struct {
 	JSONOutput   bool              `mapstructure:"json_output"`
 	Dashboard    bool              `mapstructure:"dashboard"`
 	LogErrors    bool              `mapstructure:"log_errors"`
+	HTMLOutput   string            `mapstructure:"html_output"`
 	ConfigFile   string            `mapstructure:"-"`
 	LoadPatterns []LoadPattern     `mapstructure:"load_patterns"`
 	Arrival      ArrivalConfig     `mapstructure:"arrival"`

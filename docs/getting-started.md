@@ -105,6 +105,19 @@ You can still override values with flags:
 crankfire --config loadtest.yaml --concurrency 50 --duration 5m
 ```
 
+## Generating Reports
+
+Crankfire can generate standalone HTML reports with interactive charts.
+
+```bash
+crankfire --target https://httpbin.org/get \
+  --concurrency 10 \
+  --total 1000 \
+  --html-output report.html
+```
+
+Open `report.html` in your browser to view the results.
+
 ## Next Steps
 
 - Learn how to describe realistic workloads: [Configuration & CLI Reference](configuration.md).

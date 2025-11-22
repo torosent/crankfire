@@ -55,6 +55,7 @@ Flags always override config file values.
 | `--arrival-model` | `uniform` or `poisson`. |
 | `--config` | Path to JSON/YAML config. |
 | `--json-output` | Emit a machine-readable JSON report. |
+| `--html-output` | Generate a standalone HTML report. |
 | `--dashboard` | Enable live terminal dashboard. |
 
 For the full flag list, see the CLI help or the README.
