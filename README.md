@@ -68,6 +68,12 @@ cd crankfire
 go build -o build/crankfire ./cmd/crankfire
 ```
 
+### Docker
+
+```bash
+docker run ghcr.io/torosent/crankfire --target https://example.com --total 100
+```
+
 For more installation options including Docker and pre-built binaries, see [INSTALLATION.md](docs/INSTALLATION.md) (or the **Getting Started** docs).
 
 ## Quick Start
