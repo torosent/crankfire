@@ -1,3 +1,8 @@
+---
+layout: default
+title: Home
+---
+
 # Crankfire Documentation
 
 An optimized, batteries-included load testing CLI for modern APIs and real-time systems.

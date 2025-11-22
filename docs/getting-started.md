@@ -1,3 +1,8 @@
+---
+layout: default
+title: Getting Started
+---
+
 # Getting Started
 
 This guide walks you from installation to your first meaningful load test.

@@ -1,3 +1,8 @@
+---
+layout: default
+title: Developer Guide
+---
+
 # Developer Guide
 
 This guide is for people who want to contribute to Crankfire or integrate it with other tooling.

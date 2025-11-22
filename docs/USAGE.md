@@ -1,3 +1,8 @@
+---
+layout: default
+title: Usage Examples
+---
+
 # Usage Examples
 
 This page is a curated, docs‑friendly version of `docs/USAGE.md`.

@@ -1,3 +1,8 @@
+---
+layout: default
+title: Authentication
+---
+
 # Authentication
 
 Crankfire includes first-class support for OAuth2 and OIDC flows so you can load test protected APIs safely. Tokens are automatically injected into HTTP headers, reused by WebSocket/SSE runs (they share the same headers), and propagated as `authorization` metadata for gRPC calls.
