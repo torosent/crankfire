@@ -414,3 +414,168 @@ func (m *mockAuthProvider) InjectHeader(ctx context.Context, req *http.Request) 
 func (m *mockAuthProvider) Close() error {
 	return nil
 }
+
+// mockFeeder simulates a data feeder
+type mockFeeder struct {
+	records []map[string]string
+	index   int
+}
+
+func (m *mockFeeder) Next(ctx context.Context) (map[string]string, error) {
+	if m.index >= len(m.records) {
+		return nil, errors.New("feeder exhausted")
+	}
+	record := m.records[m.index]
+	m.index++
+	return record, nil
+}
+
+func (m *mockFeeder) Close() error {
+	return nil
+}
+
+func (m *mockFeeder) Len() int {
+	return len(m.records)
+}
+
+func TestRequestBuilderWithFeeder(t *testing.T) {
+	feeder := &mockFeeder{
+		records: []map[string]string{
+			{"id": "123", "name": "alice"},
+			{"id": "456", "name": "bob"},
+		},
+	}
+
+	cfg := &config.Config{
+		TargetURL: "http://example.com/users/{{id}}",
+		Method:    "POST",
+		Headers: map[string]string{
+			"X-User": "{{name}}",
+		},
+		Body: `{"user_id": "{{id}}"}`,
+	}
+
+	builder, err := NewRequestBuilderWithFeeder(cfg, feeder)
+	if err != nil {
+		t.Fatalf("NewRequestBuilderWithFeeder() error = %v", err)
+	}
+
+	// First request
+	req1, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatalf("Build() 1 error = %v", err)
+	}
+
+	if req1.URL.String() != "http://example.com/users/123" {
+		t.Errorf("URL 1 = %q, want http://example.com/users/123", req1.URL.String())
+	}
+	if req1.Header.Get("X-User") != "alice" {
+		t.Errorf("Header 1 = %q, want alice", req1.Header.Get("X-User"))
+	}
+	body1, _ := io.ReadAll(req1.Body)
+	if string(body1) != `{"user_id": "123"}` {
+		t.Errorf("Body 1 = %q, want %q", string(body1), `{"user_id": "123"}`)
+	}
+
+	// Second request
+	req2, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatalf("Build() 2 error = %v", err)
+	}
+
+	if req2.URL.String() != "http://example.com/users/456" {
+		t.Errorf("URL 2 = %q, want http://example.com/users/456", req2.URL.String())
+	}
+	if req2.Header.Get("X-User") != "bob" {
+		t.Errorf("Header 2 = %q, want bob", req2.Header.Get("X-User"))
+	}
+	body2, _ := io.ReadAll(req2.Body)
+	if string(body2) != `{"user_id": "456"}` {
+		t.Errorf("Body 2 = %q, want %q", string(body2), `{"user_id": "456"}`)
+	}
+
+	// Third request (exhausted)
+	_, err = builder.Build(context.Background())
+	if err == nil {
+		t.Error("Build() 3 error = nil, want error")
+	}
+}
+
+func TestRequestBuilderWithAuthAndFeeder(t *testing.T) {
+	feeder := &mockFeeder{
+		records: []map[string]string{
+			{"id": "1"},
+		},
+	}
+	authProvider := &mockAuthProvider{token: "auth-token"}
+
+	cfg := &config.Config{
+		TargetURL: "http://example.com/{{id}}",
+	}
+
+	builder, err := NewRequestBuilderWithAuthAndFeeder(cfg, authProvider, feeder)
+	if err != nil {
+		t.Fatalf("NewRequestBuilderWithAuthAndFeeder() error = %v", err)
+	}
+
+	req, err := builder.Build(context.Background())
+	if err != nil {
+		t.Fatalf("Build() error = %v", err)
+	}
+
+	if req.URL.String() != "http://example.com/1" {
+		t.Errorf("URL = %q, want http://example.com/1", req.URL.String())
+	}
+	if req.Header.Get("Authorization") != "Bearer auth-token" {
+		t.Errorf("Authorization = %q, want Bearer auth-token", req.Header.Get("Authorization"))
+	}
+}
+
+func TestSubstitutePlaceholders(t *testing.T) {
+	tests := []struct {
+		name     string
+		template string
+		record   map[string]string
+		want     string
+	}{
+		{
+			name:     "simple substitution",
+			template: "hello {{name}}",
+			record:   map[string]string{"name": "world"},
+			want:     "hello world",
+		},
+		{
+			name:     "multiple substitutions",
+			template: "{{greeting}} {{name}}",
+			record:   map[string]string{"greeting": "hi", "name": "there"},
+			want:     "hi there",
+		},
+		{
+			name:     "missing key",
+			template: "hello {{name}}",
+			record:   map[string]string{"other": "value"},
+			want:     "hello {{name}}",
+		},
+		{
+			name:     "empty template",
+			template: "",
+			record:   map[string]string{"key": "value"},
+			want:     "",
+		},
+		{
+			name:     "no placeholders",
+			template: "static text",
+			record:   map[string]string{"key": "value"},
+			want:     "static text",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := substitutePlaceholders(tt.template, tt.record)
+			if got != tt.want {
+				t.Errorf("substitutePlaceholders(%q) = %q, want %q", tt.template, got, tt.want)
+			}
+		})
+	}
+}
