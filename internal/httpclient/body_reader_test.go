@@ -135,3 +135,37 @@ func TestNewBodySource(t *testing.T) {
 		}
 	})
 }
+
+func TestFileBodySource_OpenError(t *testing.T) {
+	// Create a file with no permissions
+	dir := t.TempDir()
+	path := filepath.Join(dir, "noperms.txt")
+	if err := os.WriteFile(path, []byte("content"), 0000); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	// On Windows, 0000 might not prevent reading, so we skip if we can read it.
+	// But for Linux/macOS it should fail.
+	f, err := os.Open(path)
+	if err == nil {
+		f.Close()
+		t.Skip("Skipping permission test as file is readable")
+	}
+
+	cfg := &config.Config{BodyFile: path}
+	// NewBodySource checks Stat, which might succeed even if Open fails later.
+	// But Stat on 0000 file usually works.
+	source, err := NewBodySource(cfg)
+	if err != nil {
+		// If NewBodySource fails (e.g. Stat fails), that's also fine for this test intent,
+		// but we specifically want to test NewReader failure.
+		// If Stat fails, we can't test NewReader.
+		t.Logf("NewBodySource failed: %v", err)
+		return
+	}
+
+	_, err = source.NewReader()
+	if err == nil {
+		t.Error("NewReader(noperms) error = nil, want error")
+	}
+}

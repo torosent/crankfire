@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gizak/termui/v3/widgets"
 	"github.com/torosent/crankfire/internal/metrics"
 )
 
@@ -117,5 +118,87 @@ func TestSummarizeStatusBuckets(t *testing.T) {
 	}
 	if !strings.Contains(summary, "404") {
 		t.Fatalf("expected 404 in summary, got %s", summary)
+	}
+}
+
+func TestUpdateEndpointList(t *testing.T) {
+	d := &Dashboard{
+		endpointList: widgets.NewList(),
+	}
+
+	stats := metrics.Stats{
+		EndpointStats: metrics.EndpointStats{
+			Total: 100,
+		},
+		Endpoints: map[string]metrics.EndpointStats{
+			"api/v1": {
+				Total:          80,
+				RequestsPerSec: 10.5,
+				P99LatencyMs:   120.5,
+				Failures:       2,
+				StatusBuckets: map[string]map[string]int{
+					"http": {"500": 2},
+				},
+			},
+			"api/v2": {
+				Total:          20,
+				RequestsPerSec: 5.0,
+				P99LatencyMs:   50.0,
+				Failures:       0,
+			},
+		},
+	}
+
+	d.updateEndpointList(stats)
+
+	if len(d.endpointList.Rows) != 2 {
+		t.Errorf("Expected 2 rows, got %d", len(d.endpointList.Rows))
+	}
+
+	// Check sorting (by total desc)
+	if !strings.Contains(d.endpointList.Rows[0], "api/v1") {
+		t.Error("Expected api/v1 to be first")
+	}
+	if !strings.Contains(d.endpointList.Rows[1], "api/v2") {
+		t.Error("Expected api/v2 to be second")
+	}
+
+	// Check content formatting
+	row1 := d.endpointList.Rows[0]
+	if !strings.Contains(row1, "80.0%") {
+		t.Error("Expected 80.0% share in row 1")
+	}
+	if !strings.Contains(row1, "Status HTTP 500 x2") {
+		t.Error("Expected status summary in row 1")
+	}
+}
+
+func TestUpdateProtocolMetrics(t *testing.T) {
+	d := &Dashboard{
+		protocolPara: widgets.NewParagraph(),
+	}
+
+	stats := metrics.Stats{
+		ProtocolMetrics: map[string]map[string]interface{}{
+			"http": {
+				"connections": 10,
+			},
+			"websocket": {
+				"messages": 100,
+			},
+		},
+	}
+
+	d.updateProtocolMetrics(stats)
+
+	text := d.protocolPara.Text
+	if !strings.Contains(text, "http:") {
+		t.Error("Expected http section")
+	}
+	if !strings.Contains(text, "websocket:") {
+		t.Error("Expected websocket section")
+	}
+	if !strings.Contains(text, "connections") {
+		t.Error("Expected connections metric")
 	}
 }

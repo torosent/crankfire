@@ -579,3 +579,99 @@ func TestSubstitutePlaceholders(t *testing.T) {
 		})
 	}
 }
+
+func TestNewRequestBuilder_NilConfig(t *testing.T) {
+	_, err := NewRequestBuilder(nil)
+	if err == nil {
+		t.Error("NewRequestBuilder(nil) error = nil, want error")
+	}
+}
+
+func TestNewRequestBuilder_EmptyTarget(t *testing.T) {
+	cfg := &config.Config{TargetURL: "   "}
+	_, err := NewRequestBuilder(cfg)
+	if err == nil {
+		t.Error("NewRequestBuilder(empty target) error = nil, want error")
+	}
+}
+
+func TestRequestBuilder_Build_NilBuilder(t *testing.T) {
+	var b *RequestBuilder
+	_, err := b.Build(context.Background())
+	if err == nil {
+		t.Error("Build(nil builder) error = nil, want error")
+	}
+}
+
+func TestRequestBuilder_Build_NilContext(t *testing.T) {
+	cfg := &config.Config{TargetURL: "http://example.com"}
+	b, err := NewRequestBuilder(cfg)
+	if err != nil {
+		t.Fatalf("NewRequestBuilder() error = %v", err)
+	}
+	// Should not panic and default to background context
+	req, err := b.Build(nil)
+	if err != nil {
+		t.Fatalf("Build(nil context) error = %v", err)
+	}
+	if req.Context() == nil {
+		t.Error("req.Context() is nil")
+	}
+}
+
+func TestRequestBuilder_Build_FeederError(t *testing.T) {
+	feeder := &mockFeeder{
+		records: []map[string]string{}, // Empty, will error on Next
+		index:   1,                     // Force error
+	}
+	cfg := &config.Config{TargetURL: "http://example.com"}
+	b, err := NewRequestBuilderWithFeeder(cfg, feeder)
+	if err != nil {
+		t.Fatalf("NewRequestBuilderWithFeeder() error = %v", err)
+	}
+
+	_, err = b.Build(context.Background())
+	if err == nil {
+		t.Error("Build(feeder error) error = nil, want error")
+	}
+}
+
+func TestRequestBuilder_Build_AuthError(t *testing.T) {
+	provider := &mockAuthProvider{
+		tokenErr: errors.New("auth failed"),
+	}
+	cfg := &config.Config{TargetURL: "http://example.com"}
+	b, err := NewRequestBuilderWithAuth(cfg, provider)
+	if err != nil {
+		t.Fatalf("NewRequestBuilderWithAuth() error = %v", err)
+	}
+
+	_, err = b.Build(context.Background())
+	if err == nil {
+		t.Error("Build(auth error) error = nil, want error")
+	}
+}
+
+type errorBodySource struct{}
+
+func (errorBodySource) NewReader() (io.ReadCloser, error) {
+	return nil, errors.New("body error")
+}
+
+func (errorBodySource) ContentLength() (int64, bool) {
+	return 0, false
+}
+
+func TestRequestBuilder_Build_BodyError(t *testing.T) {
+	cfg := &config.Config{TargetURL: "http://example.com"}
+	b, err := NewRequestBuilder(cfg)
+	if err != nil {
+		t.Fatalf("NewRequestBuilder() error = %v", err)
+	}
+	b.body = errorBodySource{}
+
+	_, err = b.Build(context.Background())
+	if err == nil {
+		t.Error("Build(body error) error = nil, want error")
+	}
+}

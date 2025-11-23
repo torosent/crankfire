@@ -109,3 +109,127 @@ func randFixed() *rand.Rand {
 	src := rand.NewSource(1)
 	return rand.New(src)
 }
+
+func TestResolveEndpointURL(t *testing.T) {
+	tests := []struct {
+		name    string
+		base    string
+		ep      config.Endpoint
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "absolute endpoint url",
+			base: "http://base.com",
+			ep:   config.Endpoint{URL: "http://override.com"},
+			want: "http://override.com",
+		},
+		{
+			name: "relative path",
+			base: "http://base.com/api",
+			ep:   config.Endpoint{Path: "/users"},
+			want: "http://base.com/users",
+		},
+		{
+			name: "relative path with base slash",
+			base: "http://base.com/api/",
+			ep:   config.Endpoint{Path: "users"},
+			want: "http://base.com/api/users",
+		},
+		{
+			name: "no path no url",
+			base: "http://base.com",
+			ep:   config.Endpoint{},
+			want: "http://base.com",
+		},
+		{
+			name:    "empty base and no url",
+			base:    "",
+			ep:      config.Endpoint{Path: "/users"},
+			wantErr: true,
+		},
+		{
+			name:    "invalid base",
+			base:    "://invalid",
+			ep:      config.Endpoint{Path: "/users"},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := resolveEndpointURL(tt.base, tt.ep)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("resolveEndpointURL() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("resolveEndpointURL() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMergeHeaders(t *testing.T) {
+	tests := []struct {
+		name      string
+		base      map[string]string
+		overrides map[string]string
+		want      map[string]string
+	}{
+		{
+			name:      "nil maps",
+			base:      nil,
+			overrides: nil,
+			want:      nil,
+		},
+		{
+			name:      "base only",
+			base:      map[string]string{"A": "1"},
+			overrides: nil,
+			want:      map[string]string{"A": "1"},
+		},
+		{
+			name:      "overrides only",
+			base:      nil,
+			overrides: map[string]string{"B": "2"},
+			want:      map[string]string{"B": "2"},
+		},
+		{
+			name:      "merge and override",
+			base:      map[string]string{"A": "1", "B": "2"},
+			overrides: map[string]string{"B": "3", "C": "4"},
+			want:      map[string]string{"A": "1", "B": "3", "C": "4"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := mergeHeaders(tt.base, tt.overrides)
+			// Check length
+			if len(got) != len(tt.want) {
+				t.Errorf("len(got) = %d, want %d", len(got), len(tt.want))
+			}
+			// Check values
+			for k, v := range tt.want {
+				if got[k] != v {
+					t.Errorf("got[%q] = %q, want %q", k, got[k], v)
+				}
+			}
+		})
+	}
+}
+
+func TestNewEndpointSelector_Errors(t *testing.T) {
+	t.Run("invalid weight", func(t *testing.T) {
+		cfg := &config.Config{
+			Endpoints: []config.Endpoint{
+				{Name: "bad", Weight: 0},
+			},
+		}
+		_, err := newEndpointSelector(cfg)
+		if err == nil {
+			t.Error("newEndpointSelector(weight=0) error = nil, want error")
+		}
+	})
+}

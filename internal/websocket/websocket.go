@@ -128,6 +128,17 @@ func (c *Client) ReceiveMessage(ctx context.Context) (Message, error) {
 		return Message{}, fmt.Errorf("not connected")
 	}
 
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := conn.SetReadDeadline(deadline); err != nil {
+			return Message{}, fmt.Errorf("set read deadline: %w", err)
+		}
+	} else {
+		// Clear deadline if no deadline in context
+		if err := conn.SetReadDeadline(time.Time{}); err != nil {
+			return Message{}, fmt.Errorf("clear read deadline: %w", err)
+		}
+	}
+
 	msgType, data, err := conn.ReadMessage()
 	if err != nil {
 		c.mu.Lock()

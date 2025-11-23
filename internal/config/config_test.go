@@ -960,3 +960,297 @@ func TestHTMLOutputFlag(t *testing.T) {
 		}
 	})
 }
+
+func TestProtocolValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  config.Config
+		wantErr string
+	}{
+		{
+			name: "invalid protocol",
+			config: config.Config{
+				TargetURL: "http://example.com",
+				Protocol:  "ftp",
+			},
+			wantErr: "protocol: must be 'http', 'websocket', 'sse', or 'grpc'",
+		},
+		{
+			name: "websocket negative message interval",
+			config: config.Config{
+				TargetURL: "ws://example.com",
+				Protocol:  config.ProtocolWebSocket,
+				WebSocket: config.WebSocketConfig{
+					MessageInterval: -1 * time.Second,
+				},
+			},
+			wantErr: "websocket: message_interval must be >= 0",
+		},
+		{
+			name: "websocket negative receive timeout",
+			config: config.Config{
+				TargetURL: "ws://example.com",
+				Protocol:  config.ProtocolWebSocket,
+				WebSocket: config.WebSocketConfig{
+					ReceiveTimeout: -1 * time.Second,
+				},
+			},
+			wantErr: "websocket: receive_timeout must be >= 0",
+		},
+		{
+			name: "websocket negative handshake timeout",
+			config: config.Config{
+				TargetURL: "ws://example.com",
+				Protocol:  config.ProtocolWebSocket,
+				WebSocket: config.WebSocketConfig{
+					HandshakeTimeout: -1 * time.Second,
+				},
+			},
+			wantErr: "websocket: handshake_timeout must be >= 0",
+		},
+		{
+			name: "sse negative read timeout",
+			config: config.Config{
+				TargetURL: "http://example.com",
+				Protocol:  config.ProtocolSSE,
+				SSE: config.SSEConfig{
+					ReadTimeout: -1 * time.Second,
+				},
+			},
+			wantErr: "sse: read_timeout must be >= 0",
+		},
+		{
+			name: "sse negative max events",
+			config: config.Config{
+				TargetURL: "http://example.com",
+				Protocol:  config.ProtocolSSE,
+				SSE: config.SSEConfig{
+					MaxEvents: -1,
+				},
+			},
+			wantErr: "sse: max_events must be >= 0",
+		},
+		{
+			name: "grpc missing service",
+			config: config.Config{
+				TargetURL: "grpc://example.com",
+				Protocol:  config.ProtocolGRPC,
+				GRPC: config.GRPCConfig{
+					Method: "SayHello",
+				},
+			},
+			wantErr: "grpc: service is required",
+		},
+		{
+			name: "grpc missing method",
+			config: config.Config{
+				TargetURL: "grpc://example.com",
+				Protocol:  config.ProtocolGRPC,
+				GRPC: config.GRPCConfig{
+					Service: "Greeter",
+				},
+			},
+			wantErr: "grpc: method is required",
+		},
+		{
+			name: "grpc negative timeout",
+			config: config.Config{
+				TargetURL: "grpc://example.com",
+				Protocol:  config.ProtocolGRPC,
+				GRPC: config.GRPCConfig{
+					Service: "Greeter",
+					Method:  "SayHello",
+					Timeout: -1 * time.Second,
+				},
+			},
+			wantErr: "grpc: timeout must be >= 0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set defaults for required fields to avoid noise
+			if tt.config.Concurrency == 0 {
+				tt.config.Concurrency = 1
+			}
+
+			err := tt.config.Validate()
+			if err == nil {
+				t.Errorf("Validate() expected error containing %q, got nil", tt.wantErr)
+				return
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("Validate() error = %q, want substring %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestEndpointDuplicateNames(t *testing.T) {
+	cfg := config.Config{
+		TargetURL:   "http://example.com",
+		Concurrency: 1,
+		Endpoints: []config.Endpoint{
+			{Name: "login", URL: "http://example.com/login", Weight: 1},
+			{Name: "Login", URL: "http://example.com/login", Weight: 1}, // Case-insensitive duplicate
+		},
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() expected error for duplicate endpoint names, got nil")
+	}
+	if !strings.Contains(err.Error(), "duplicate name") {
+		t.Errorf("Validate() error = %q, want substring 'duplicate name'", err.Error())
+	}
+}
+
+func TestValidationErrorMethods(t *testing.T) {
+	// Create a config that produces multiple errors
+	cfg := config.Config{
+		TargetURL:   "", // Missing target
+		Concurrency: -1, // Invalid concurrency
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() expected error, got nil")
+	}
+
+	// Assert it implements ValidationError interface implicitly or check type
+	valErr, ok := err.(config.ValidationError)
+	if !ok {
+		t.Fatalf("Expected error to be of type ValidationError, got %T", err)
+	}
+
+	issues := valErr.Issues()
+	if len(issues) < 2 {
+		t.Errorf("Expected at least 2 issues, got %d", len(issues))
+	}
+
+	msg := valErr.Error()
+	if !strings.Contains(msg, "validation failed:") {
+		t.Errorf("Error() message should start with 'validation failed:', got %q", msg)
+	}
+	if !strings.Contains(msg, "target is required") {
+		t.Errorf("Error() message should contain 'target is required'")
+	}
+	if !strings.Contains(msg, "concurrency must be >=") {
+		t.Errorf("Error() message should contain 'concurrency must be >='")
+	}
+}
+
+func TestArrivalModelValidation(t *testing.T) {
+	cfg := config.Config{
+		TargetURL:   "http://example.com",
+		Concurrency: 1,
+		Arrival: config.ArrivalConfig{
+			Model: "invalid-model",
+		},
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() expected error for invalid arrival model, got nil")
+	}
+	if !strings.Contains(err.Error(), "arrival model \"invalid-model\" is not supported") {
+		t.Errorf("Validate() error = %q, want substring 'arrival model \"invalid-model\" is not supported'", err.Error())
+	}
+}
+
+func TestLoadPatternValidation(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern config.LoadPattern
+		wantErr string
+	}{
+		{
+			name: "missing type",
+			pattern: config.LoadPattern{
+				Type: "",
+			},
+			wantErr: "type is required",
+		},
+		{
+			name: "unsupported type",
+			pattern: config.LoadPattern{
+				Type: "unknown",
+			},
+			wantErr: "unsupported type",
+		},
+		{
+			name: "ramp negative from_rps",
+			pattern: config.LoadPattern{
+				Type:     config.LoadPatternTypeRamp,
+				FromRPS:  -1,
+				ToRPS:    10,
+				Duration: 10 * time.Second,
+			},
+			wantErr: "from_rps and to_rps must be >= 0",
+		},
+		{
+			name: "step missing steps",
+			pattern: config.LoadPattern{
+				Type:  config.LoadPatternTypeStep,
+				Steps: []config.LoadStep{},
+			},
+			wantErr: "steps are required",
+		},
+		{
+			name: "step negative rps",
+			pattern: config.LoadPattern{
+				Type: config.LoadPatternTypeStep,
+				Steps: []config.LoadStep{
+					{RPS: -1, Duration: 10 * time.Second},
+				},
+			},
+			wantErr: "rps must be >= 0",
+		},
+		{
+			name: "step non-positive duration",
+			pattern: config.LoadPattern{
+				Type: config.LoadPatternTypeStep,
+				Steps: []config.LoadStep{
+					{RPS: 10, Duration: 0},
+				},
+			},
+			wantErr: "duration must be > 0",
+		},
+		{
+			name: "spike non-positive rps",
+			pattern: config.LoadPattern{
+				Type:     config.LoadPatternTypeSpike,
+				RPS:      0,
+				Duration: 10 * time.Second,
+			},
+			wantErr: "rps must be > 0",
+		},
+		{
+			name: "spike non-positive duration",
+			pattern: config.LoadPattern{
+				Type:     config.LoadPatternTypeSpike,
+				RPS:      100,
+				Duration: 0,
+			},
+			wantErr: "duration must be > 0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := config.Config{
+				TargetURL:    "http://example.com",
+				Concurrency:  1,
+				LoadPatterns: []config.LoadPattern{tt.pattern},
+			}
+			err := cfg.Validate()
+			if err == nil {
+				t.Errorf("Validate() expected error containing %q, got nil", tt.wantErr)
+				return
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("Validate() error = %q, want substring %q", err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
