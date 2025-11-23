@@ -59,6 +59,11 @@ See the [full feature overview in the docs](https://torosent.github.io/crankfire
 brew tap torosent/crankfire
 brew install crankfire
 ```
+### Docker
+
+```bash
+docker run ghcr.io/torosent/crankfire --target https://example.com --total 100
+```
 
 ### Go Install
 
@@ -73,14 +78,6 @@ git clone https://github.com/torosent/crankfire.git
 cd crankfire
 go build -o build/crankfire ./cmd/crankfire
 ```
-
-### Docker
-
-```bash
-docker run ghcr.io/torosent/crankfire --target https://example.com --total 100
-```
-
-For more installation options including Docker and pre-built binaries, see [INSTALLATION.md](docs/INSTALLATION.md) (or the **Getting Started** docs).
 
 ## Quick Start
 
