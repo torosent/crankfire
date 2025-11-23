@@ -79,9 +79,25 @@ func (c *Client) Connect(ctx context.Context) error {
 	if c.conn != nil {
 		return fmt.Errorf("client already connected")
 	}
+
+	conn, err := Dial(ctx, Config{
+		Target:   c.target,
+		UseTLS:   c.useTLS,
+		Insecure: c.insecure,
+		Timeout:  30 * time.Second, // Default, though Dial context governs timeout
+	})
+	if err != nil {
+		return err
+	}
+	c.conn = conn
+	return nil
+}
+
+// Dial establishes a gRPC connection based on configuration
+func Dial(ctx context.Context, cfg Config) (*grpc.ClientConn, error) {
 	var opts []grpc.DialOption
-	if c.useTLS {
-		if c.insecure {
+	if cfg.UseTLS {
+		if cfg.Insecure {
 			// Use TLS but skip certificate verification
 			creds := credentials.NewTLS(&tls.Config{InsecureSkipVerify: true})
 			opts = append(opts, grpc.WithTransportCredentials(creds))
@@ -93,12 +109,27 @@ func (c *Client) Connect(ctx context.Context) error {
 	} else {
 		opts = append(opts, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
-	conn, err := grpc.NewClient(c.target, opts...)
-	if err != nil {
-		return fmt.Errorf("failed to connect to %s: %w", c.target, err)
+
+	// grpc.NewClient is non-blocking and doesn't take a context for dialing itself
+	return grpc.NewClient(cfg.Target, opts...)
+}
+
+// NewClientWithConn creates a new gRPC client using an existing connection
+func NewClientWithConn(conn *grpc.ClientConn, cfg Config) *Client {
+	md := metadata.New(cfg.Metadata)
+	if cfg.Timeout == 0 {
+		cfg.Timeout = 30 * time.Second
 	}
-	c.conn = conn
-	return nil
+	return &Client{
+		target:     cfg.Target,
+		conn:       conn,
+		service:    cfg.Service,
+		method:     cfg.Method,
+		md:         md,
+		useTLS:     cfg.UseTLS,
+		insecure:   cfg.Insecure,
+		lastStatus: "UNSET",
+	}
 }
 
 // Invoke makes a unary RPC call

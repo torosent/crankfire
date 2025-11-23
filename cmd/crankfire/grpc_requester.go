@@ -16,6 +16,7 @@ import (
 	"github.com/torosent/crankfire/internal/grpcclient"
 	"github.com/torosent/crankfire/internal/httpclient"
 	"github.com/torosent/crankfire/internal/metrics"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/protoadapt"
 )
@@ -29,6 +30,7 @@ type grpcRequester struct {
 	methodOnce sync.Once
 	methodDesc *desc.MethodDescriptor
 	methodErr  error
+	conns      sync.Map // map[string]*grpc.ClientConn
 }
 
 func newGRPCRequester(cfg *config.Config, collector *metrics.Collector, provider auth.Provider, feeder httpclient.Feeder) *grpcRequester {
@@ -98,26 +100,31 @@ func (g *grpcRequester) Do(ctx context.Context) error {
 		Insecure: g.cfg.Insecure,
 	}
 
-	client, err := grpcclient.NewClient(grpcCfg)
-	if err != nil {
-		meta = annotateStatus(meta, "grpc", fallbackStatusCode(err))
-		g.collector.RecordRequest(time.Since(start), err, meta)
-		return fmt.Errorf("create grpc client: %w", err)
+	// Get or create connection
+	var conn *grpc.ClientConn
+	if v, ok := g.conns.Load(target); ok {
+		conn = v.(*grpc.ClientConn)
+	} else {
+		// Create new connection
+		// Note: In high concurrency with dynamic targets, this might create duplicates
+		// which are thrown away by LoadOrStore, but that's acceptable.
+		newConn, err := grpcclient.Dial(ctx, grpcCfg)
+		if err != nil {
+			meta = annotateStatus(meta, "grpc", grpcStatusCode(err))
+			g.collector.RecordRequest(time.Since(start), err, meta)
+			return fmt.Errorf("grpc connect: %w", err)
+		}
+
+		if actual, loaded := g.conns.LoadOrStore(target, newConn); loaded {
+			newConn.Close() // Close duplicate
+			conn = actual.(*grpc.ClientConn)
+		} else {
+			conn = newConn
+		}
 	}
 
-	connectCtx := ctx
-	if g.cfg.Timeout > 0 {
-		var cancel context.CancelFunc
-		connectCtx, cancel = context.WithTimeout(ctx, g.cfg.Timeout)
-		defer cancel()
-	}
-
-	if err := client.Connect(connectCtx); err != nil {
-		meta = annotateStatus(meta, "grpc", grpcStatusCode(err))
-		g.collector.RecordRequest(time.Since(start), err, meta)
-		return fmt.Errorf("grpc connect: %w", err)
-	}
-	defer client.Close()
+	client := grpcclient.NewClientWithConn(conn, grpcCfg)
+	// Do NOT close client, as it would close the shared connection
 
 	callCtx := ctx
 	if g.cfg.Timeout > 0 {

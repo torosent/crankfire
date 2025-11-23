@@ -59,10 +59,13 @@ func TestCSVFeederLoadAndRoundRobin(t *testing.T) {
 		t.Errorf("Third record = %v, want Charlie's data", rec3)
 	}
 
-	// Fourth call should return exhausted error (no rewind per requirements)
-	_, err = feeder.Next(ctx)
-	if err != ErrExhausted {
-		t.Errorf("Next() after exhaustion error = %v, want ErrExhausted", err)
+	// Fourth call should loop back to the first record
+	rec4, err := feeder.Next(ctx)
+	if err != nil {
+		t.Fatalf("Next() after exhaustion error = %v", err)
+	}
+	if rec4["user_id"] != "1" || rec4["email"] != "alice@example.com" {
+		t.Errorf("Fourth record (looped) = %v, want Alice's data", rec4)
 	}
 }
 
@@ -106,10 +109,13 @@ func TestJSONFeederLoadAndRoundRobin(t *testing.T) {
 		t.Errorf("Second record = %v, want Gadget data", rec2)
 	}
 
-	// Third call should exhaust
-	_, err = feeder.Next(ctx)
-	if err != ErrExhausted {
-		t.Errorf("Next() after exhaustion error = %v, want ErrExhausted", err)
+	// Third call should loop back
+	rec3, err := feeder.Next(ctx)
+	if err != nil {
+		t.Fatalf("Next() after exhaustion error = %v", err)
+	}
+	if rec3["product_id"] != "p1" {
+		t.Errorf("Third record (looped) = %v, want Widget data", rec3)
 	}
 }
 

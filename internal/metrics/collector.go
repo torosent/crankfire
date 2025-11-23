@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"math/rand"
 	"sync"
 	"time"
 
@@ -9,9 +10,8 @@ import (
 
 const (
 	// minElapsedForRPS is the minimum elapsed time required before calculating RPS.
-	// This prevents unrealistic RPS values during the initial moments of a test
-	// (e.g., 10 requests completing in 1ms would show as 10,000 RPS).
 	minElapsedForRPS = 100 * time.Millisecond
+	numShards        = 32
 )
 
 // DataPoint represents a snapshot of metrics at a specific point in time.
@@ -30,14 +30,21 @@ type DataPoint struct {
 }
 
 type Collector struct {
-	mu            sync.Mutex
-	total         *statsBucket
-	endpoints     map[string]*statsBucket
+	total     *shardedStats
+	endpoints sync.Map // map[string]*shardedStats
+
+	// customMetrics needs its own protection or sharding.
+	// For simplicity, we'll use a mutex for custom metrics aggregation as it's less frequent/critical than latency.
+	customMu      sync.Mutex
 	customMetrics map[string]map[string]interface{} // protocol -> aggregated metrics
-	startTime     time.Time
-	started       bool
-	history       []DataPoint
-	lastSnapshot  snapshotState
+
+	startTime time.Time
+	started   bool
+	startMu   sync.Mutex // Protects startTime/started
+
+	historyMu    sync.Mutex
+	history      []DataPoint
+	lastSnapshot snapshotState
 }
 
 type snapshotState struct {
@@ -92,18 +99,16 @@ type Stats struct {
 // NewCollector allocates a Collector.
 func NewCollector() *Collector {
 	return &Collector{
-		total:         newStatsBucket(),
-		endpoints:     make(map[string]*statsBucket),
+		total:         newShardedStats(),
 		customMetrics: make(map[string]map[string]interface{}),
 		history:       []DataPoint{},
 	}
 }
 
 // Start marks the beginning of the test for accurate RPS calculation.
-// This should be called when the test actually begins, not when the Collector is created.
 func (c *Collector) Start() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.startMu.Lock()
+	defer c.startMu.Unlock()
 	if !c.started {
 		c.startTime = time.Now()
 		c.started = true
@@ -112,9 +117,6 @@ func (c *Collector) Start() {
 
 // RecordRequest records a single request's latency and error state.
 func (c *Collector) RecordRequest(latency time.Duration, err error, meta *RequestMetadata) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	var endpoint string
 	var protocol string
 	var statusCode string
@@ -128,50 +130,52 @@ func (c *Collector) RecordRequest(latency time.Duration, err error, meta *Reques
 
 	c.total.record(latency, err, protocol, statusCode)
 	if endpoint != "" {
-		bucket, ok := c.endpoints[endpoint]
+		v, ok := c.endpoints.Load(endpoint)
 		if !ok {
-			bucket = newStatsBucket()
-			c.endpoints[endpoint] = bucket
+			v, _ = c.endpoints.LoadOrStore(endpoint, newShardedStats())
 		}
-		bucket.record(latency, err, protocol, statusCode)
+		v.(*shardedStats).record(latency, err, protocol, statusCode)
 	}
 
 	// Aggregate CustomMetrics by protocol
 	if protocol != "" && len(customMetrics) > 0 {
+		c.customMu.Lock()
 		if c.customMetrics[protocol] == nil {
 			c.customMetrics[protocol] = make(map[string]interface{})
 		}
 		for key, value := range customMetrics {
 			c.aggregateMetric(protocol, key, value)
 		}
+		c.customMu.Unlock()
 	}
 }
 
 // Stats computes and returns current aggregated statistics.
-// The elapsed parameter is only used if Start() has not been called.
-// If Start() was called, we use the actual time since Start() for accurate RPS.
 func (c *Collector) Stats(elapsed time.Duration) Stats {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	// If Start() was called, use actual elapsed time since then.
-	// Otherwise use the provided elapsed (for tests or cases where Start() wasn't called).
+	c.startMu.Lock()
 	actualElapsed := elapsed
 	if c.started {
 		actualElapsed = time.Since(c.startTime)
 	}
+	c.startMu.Unlock()
 
 	summary := c.total.snapshot(actualElapsed)
-	endpointSnaps := make(map[string]EndpointStats, len(c.endpoints))
-	for name, bucket := range c.endpoints {
-		endpointSnaps[name] = bucket.snapshot(actualElapsed)
-	}
+	endpointSnaps := make(map[string]EndpointStats)
+
+	c.endpoints.Range(func(key, value interface{}) bool {
+		name := key.(string)
+		stats := value.(*shardedStats)
+		endpointSnaps[name] = stats.snapshot(actualElapsed)
+		return true
+	})
 
 	// Copy protocol metrics
+	c.customMu.Lock()
 	protocolMetrics := make(map[string]map[string]interface{}, len(c.customMetrics))
 	for protocol, metrics := range c.customMetrics {
 		protocolMetrics[protocol] = copyMetrics(metrics)
 	}
+	c.customMu.Unlock()
 
 	return Stats{
 		EndpointStats:   summary,
@@ -180,6 +184,41 @@ func (c *Collector) Stats(elapsed time.Duration) Stats {
 		Endpoints:       endpointSnaps,
 		ProtocolMetrics: protocolMetrics,
 	}
+}
+
+type shard struct {
+	mu     sync.Mutex
+	bucket *statsBucket
+}
+
+type shardedStats struct {
+	shards [numShards]*shard
+}
+
+func newShardedStats() *shardedStats {
+	s := &shardedStats{}
+	for i := 0; i < numShards; i++ {
+		s.shards[i] = &shard{bucket: newStatsBucket()}
+	}
+	return s
+}
+
+func (s *shardedStats) record(latency time.Duration, err error, protocol, statusCode string) {
+	idx := rand.Intn(numShards)
+	sh := s.shards[idx]
+	sh.mu.Lock()
+	sh.bucket.record(latency, err, protocol, statusCode)
+	sh.mu.Unlock()
+}
+
+func (s *shardedStats) snapshot(elapsed time.Duration) EndpointStats {
+	agg := newStatsBucket()
+	for _, sh := range s.shards {
+		sh.mu.Lock()
+		agg.merge(sh.bucket)
+		sh.mu.Unlock()
+	}
+	return agg.snapshot(elapsed)
 }
 
 type statsBucket struct {
@@ -228,6 +267,43 @@ func (b *statsBucket) record(latency time.Duration, err error, protocol, statusC
 	}
 }
 
+func (b *statsBucket) merge(other *statsBucket) {
+	b.successes += other.successes
+	b.failures += other.failures
+	b.sumLatency += other.sumLatency
+
+	if other.minLatency > 0 {
+		if b.minLatency == 0 || other.minLatency < b.minLatency {
+			b.minLatency = other.minLatency
+		}
+	}
+	if other.maxLatency > b.maxLatency {
+		b.maxLatency = other.maxLatency
+	}
+
+	b.hist.Merge(other.hist)
+
+	for protocol, buckets := range other.statusBuckets {
+		for status, count := range buckets {
+			b.recordStatusCount(protocol, status, count)
+		}
+	}
+}
+
+func (b *statsBucket) recordStatus(protocol, statusCode string) {
+	b.recordStatusCount(protocol, statusCode, 1)
+}
+
+func (b *statsBucket) recordStatusCount(protocol, statusCode string, count int64) {
+	if b.statusBuckets == nil {
+		b.statusBuckets = make(map[string]map[string]int64)
+	}
+	if b.statusBuckets[protocol] == nil {
+		b.statusBuckets[protocol] = make(map[string]int64)
+	}
+	b.statusBuckets[protocol][statusCode] += count
+}
+
 func (b *statsBucket) snapshot(elapsed time.Duration) EndpointStats {
 	total := b.successes + b.failures
 	stats := EndpointStats{
@@ -257,8 +333,6 @@ func (b *statsBucket) snapshot(elapsed time.Duration) EndpointStats {
 	stats.P95LatencyMs = float64(stats.P95Latency) / float64(time.Millisecond)
 	stats.P99LatencyMs = float64(stats.P99Latency) / float64(time.Millisecond)
 
-	// Only calculate RPS if enough time has elapsed to avoid unrealistic values.
-
 	elapsedSeconds := elapsed.Seconds()
 	if elapsed >= minElapsedForRPS && total > 0 && elapsedSeconds > 0 {
 		stats.RequestsPerSec = float64(total) / elapsedSeconds
@@ -269,16 +343,6 @@ func (b *statsBucket) snapshot(elapsed time.Duration) EndpointStats {
 	}
 
 	return stats
-}
-
-func (b *statsBucket) recordStatus(protocol, statusCode string) {
-	if b.statusBuckets == nil {
-		b.statusBuckets = make(map[string]map[string]int64)
-	}
-	if b.statusBuckets[protocol] == nil {
-		b.statusBuckets[protocol] = make(map[string]int64)
-	}
-	b.statusBuckets[protocol][statusCode]++
 }
 
 func copyStatusBuckets(src map[string]map[string]int64) map[string]map[string]int {
@@ -344,12 +408,12 @@ func copyMetrics(src map[string]interface{}) map[string]interface{} {
 // Snapshot records the current state of metrics as a DataPoint and appends it to history.
 // This method is thread-safe and can be called periodically to build time-series data.
 func (c *Collector) Snapshot() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.historyMu.Lock()
+	defer c.historyMu.Unlock()
 
 	now := time.Now()
 
-	// Calculate elapsed time since start or last snapshot
+	c.startMu.Lock()
 	var elapsed time.Duration
 	if c.lastSnapshot.timestamp.IsZero() {
 		if c.started {
@@ -360,11 +424,15 @@ func (c *Collector) Snapshot() {
 	} else {
 		elapsed = now.Sub(c.lastSnapshot.timestamp)
 	}
+	c.startMu.Unlock()
 
-	// Get current totals
-	currentTotal := c.total.successes + c.total.failures
-	currentSuccess := c.total.successes
-	currentFailures := c.total.failures
+	// Get current totals by snapshotting the total sharded stats
+	// Note: This is slightly expensive but Snapshot is called infrequently (1s)
+	summary := c.total.snapshot(elapsed) // elapsed here is just for RPS calc inside snapshot, but we use raw counts
+
+	currentTotal := summary.Total
+	currentSuccess := summary.Successes
+	currentFailures := summary.Failures
 
 	// Calculate delta for RPS
 	var deltaRequests int64
@@ -380,26 +448,18 @@ func (c *Collector) Snapshot() {
 		currentRPS = float64(deltaRequests) / elapsed.Seconds()
 	}
 
-	// Get percentile data
-	var p50, p95, p99 time.Duration
-	if c.total.hist.TotalCount() > 0 {
-		p50 = time.Duration(c.total.hist.ValueAtQuantile(50)) * time.Microsecond
-		p95 = time.Duration(c.total.hist.ValueAtQuantile(95)) * time.Microsecond
-		p99 = time.Duration(c.total.hist.ValueAtQuantile(99)) * time.Microsecond
-	}
-
 	dataPoint := DataPoint{
 		Timestamp:          now,
 		TotalRequests:      currentTotal,
 		SuccessfulRequests: currentSuccess,
 		Errors:             currentFailures,
 		CurrentRPS:         currentRPS,
-		P50Latency:         p50,
-		P95Latency:         p95,
-		P99Latency:         p99,
-		P50LatencyMs:       float64(p50) / float64(time.Millisecond),
-		P95LatencyMs:       float64(p95) / float64(time.Millisecond),
-		P99LatencyMs:       float64(p99) / float64(time.Millisecond),
+		P50Latency:         summary.P50Latency,
+		P95Latency:         summary.P95Latency,
+		P99Latency:         summary.P99Latency,
+		P50LatencyMs:       summary.P50LatencyMs,
+		P95LatencyMs:       summary.P95LatencyMs,
+		P99LatencyMs:       summary.P99LatencyMs,
 	}
 
 	c.history = append(c.history, dataPoint)
@@ -415,8 +475,8 @@ func (c *Collector) Snapshot() {
 
 // History returns a copy of the recorded history data points.
 func (c *Collector) History() []DataPoint {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.historyMu.Lock()
+	defer c.historyMu.Unlock()
 
 	result := make([]DataPoint, len(c.history))
 	copy(result, c.history)

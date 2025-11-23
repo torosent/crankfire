@@ -68,7 +68,7 @@ func (f *JSONFeeder) Next(ctx context.Context) (Record, error) {
 	defer f.mu.Unlock()
 
 	if f.index >= len(f.records) {
-		return nil, ErrExhausted
+		f.index = 0
 	}
 
 	record := f.records[f.index]

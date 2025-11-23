@@ -1,5 +1,5 @@
 #!/bin/bash
-# Test WebSocket and SSE protocol integration
+# Test gRPC, WebSocket and SSE protocol integration
 
 set -euo pipefail
 
@@ -78,8 +78,9 @@ run_doc_sample_config() {
       --config "$config_name" \
       --json-output \
       "${DOC_SAMPLE_DEFAULT_FLAGS[@]}" \
-      "${extra_cli[@]}") 2>/dev/null ); then
+      "${extra_cli[@]}") 2>&1 ); then
     echo "✗ $description failed (crankfire error)"
+    echo "$output"
     rm -f "$config_path"
     return 1
   fi
@@ -102,11 +103,14 @@ run_doc_sample_websocket_samples() {
 
   run_doc_sample_config "$DOC_SAMPLES_ROOT/websocket-test.yml" "doc-samples/websocket-test.yml" \
     --concurrency 1 --total 2 --duration 3s \
-    -- "ws://localhost:8080/chat" "$ws_url" "receive_timeout: 10s" "receive_timeout: 0s" || failures=$((failures + 1))
+    -- "ws://localhost:8080/chat" "$ws_url" \
+       "receive_timeout: 10s" "receive_timeout: 0s" \
+       "message_interval: 2s" "message_interval: 100ms" || failures=$((failures + 1))
 
   run_doc_sample_config "$DOC_SAMPLES_ROOT/ws-feeder-test.yml" "doc-samples/ws-feeder-test.yml" \
     --concurrency 1 --total 2 --duration 3s \
-    -- "ws://localhost:8080/chat" "$ws_url" || failures=$((failures + 1))
+    -- "ws://localhost:8080/chat" "$ws_url" \
+       "message_interval: 1s" "message_interval: 100ms" || failures=$((failures + 1))
 
   kill "$ws_pid" 2>/dev/null || true
 
@@ -229,14 +233,17 @@ echo ""
 
 echo ""
 echo "=== Testing SSE Protocol ==="
-echo "Starting SSE server on port 8766..."
+SSE_PORT=$(find_free_port)
+echo "Starting SSE server on port $SSE_PORT..."
 
 # Start a simple SSE server using Python
 python3 -c '
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import time
 import signal
 import sys
+
+port = int(sys.argv[1])
 
 class SSEHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -247,16 +254,19 @@ class SSEHandler(BaseHTTPRequestHandler):
         self.end_headers()
         
         for i in range(10):
-            self.wfile.write(f"data: Event {i}\n\n".encode())
-            self.wfile.flush()
-            time.sleep(0.05)
+            try:
+                self.wfile.write(f"data: Event {i}\n\n".encode())
+                self.wfile.flush()
+                time.sleep(0.05)
+            except BrokenPipeError:
+                break
     
     def log_message(self, format, *args):
         pass  # Suppress logs
 
-server = HTTPServer(("localhost", 8766), SSEHandler)
+server = ThreadingHTTPServer(("localhost", port), SSEHandler)
 server.serve_forever()
-' &
+' "$SSE_PORT" &
 SSE_PID=$!
 echo "SSE server PID: $SSE_PID"
 
@@ -266,12 +276,12 @@ sleep 2
 echo "Running SSE load test..."
 "$CRANKFIRE_BIN" \
   --protocol sse \
-  --target http://localhost:8766/events \
+  --target "http://localhost:$SSE_PORT/events" \
   --sse-read-timeout 5s \
   --sse-max-events 10 \
   --concurrency 3 \
   --total 5 \
-  --json-output > /tmp/sse-test-output.json
+  --json-output > /tmp/sse-test-output.json 2>&1 || true
 
 # Check output
 if [ -f /tmp/sse-test-output.json ]; then
