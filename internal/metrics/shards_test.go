@@ -87,7 +87,7 @@ func TestShardedStats_Aggregation(t *testing.T) {
 	if stats.MaxLatency != 20*time.Millisecond {
 		t.Errorf("expected max 20ms, got %v", stats.MaxLatency)
 	}
-	
+
 	// Check status buckets aggregation
 	if stats.StatusBuckets == nil {
 		t.Fatal("expected status buckets")
