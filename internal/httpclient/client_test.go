@@ -610,7 +610,7 @@ func TestRequestBuilder_Build_NilContext(t *testing.T) {
 		t.Fatalf("NewRequestBuilder() error = %v", err)
 	}
 	// Should not panic and default to background context
-	req, err := b.Build(nil)
+	req, err := b.Build(context.TODO())
 	if err != nil {
 		t.Fatalf("Build(nil context) error = %v", err)
 	}

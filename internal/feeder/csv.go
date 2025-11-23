@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 )
@@ -11,9 +12,11 @@ import (
 // CSVFeeder reads records from a CSV file and provides them in round-robin order.
 // It is safe for concurrent access.
 type CSVFeeder struct {
-	records []Record
-	index   int
-	mu      sync.Mutex
+	file        *os.File
+	reader      *csv.Reader
+	header      []string
+	mu          sync.Mutex
+	recordCount int
 }
 
 // NewCSVFeeder creates a new CSV feeder from the given file path.
@@ -23,48 +26,60 @@ func NewCSVFeeder(path string) (*CSVFeeder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open CSV file: %w", err)
 	}
-	defer file.Close()
 
+	// Read header
 	reader := csv.NewReader(file)
 	reader.TrimLeadingSpace = true
 
-	rows, err := reader.ReadAll()
+	header, err := reader.Read()
 	if err != nil {
-		return nil, fmt.Errorf("read CSV: %w", err)
+		file.Close()
+		return nil, fmt.Errorf("read CSV header: %w", err)
 	}
 
-	if len(rows) == 0 {
-		return nil, fmt.Errorf("CSV file is empty")
-	}
-
-	if len(rows) < 2 {
-		return nil, fmt.Errorf("CSV file must have at least one header row and one data row")
-	}
-
-	header := rows[0]
-	dataRows := rows[1:]
-
-	records := make([]Record, 0, len(dataRows))
-	for i, row := range dataRows {
-		if len(row) != len(header) {
-			return nil, fmt.Errorf("row %d has %d fields, expected %d", i+2, len(row), len(header))
+	// Count records
+	count := 0
+	for {
+		_, err := reader.Read()
+		if err == io.EOF {
+			break
 		}
-
-		record := make(Record)
-		for j, field := range header {
-			record[field] = row[j]
+		if err != nil {
+			file.Close()
+			return nil, fmt.Errorf("scan CSV: %w", err)
 		}
-		records = append(records, record)
+		count++
+	}
+
+	if count == 0 {
+		file.Close()
+		return nil, fmt.Errorf("CSV file must have at least one data row")
+	}
+
+	// Reset to start of data
+	if _, err := file.Seek(0, 0); err != nil {
+		file.Close()
+		return nil, fmt.Errorf("seek CSV: %w", err)
+	}
+
+	// Re-initialize reader and skip header
+	reader = csv.NewReader(file)
+	reader.TrimLeadingSpace = true
+	if _, err := reader.Read(); err != nil {
+		file.Close()
+		return nil, fmt.Errorf("read CSV header after reset: %w", err)
 	}
 
 	return &CSVFeeder{
-		records: records,
-		index:   0,
+		file:        file,
+		reader:      reader,
+		header:      header,
+		recordCount: count,
 	}, nil
 }
 
 // Next returns the next record in round-robin order.
-// Returns ErrExhausted when all records have been consumed.
+// It loops back to the beginning when the file is exhausted.
 func (f *CSVFeeder) Next(ctx context.Context) (Record, error) {
 	// Check context cancellation first
 	select {
@@ -76,21 +91,48 @@ func (f *CSVFeeder) Next(ctx context.Context) (Record, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if f.index >= len(f.records) {
-		return nil, ErrExhausted
+	row, err := f.reader.Read()
+	if err == io.EOF {
+		// Loop back to start
+		if _, seekErr := f.file.Seek(0, 0); seekErr != nil {
+			return nil, fmt.Errorf("seek CSV: %w", seekErr)
+		}
+		f.reader = csv.NewReader(f.file)
+		f.reader.TrimLeadingSpace = true
+		// Skip header
+		if _, headerErr := f.reader.Read(); headerErr != nil {
+			return nil, fmt.Errorf("read CSV header: %w", headerErr)
+		}
+		// Read first row again
+		row, err = f.reader.Read()
 	}
 
-	record := f.records[f.index]
-	f.index++
+	if err != nil {
+		return nil, fmt.Errorf("read CSV row: %w", err)
+	}
+
+	if len(row) != len(f.header) {
+		return nil, fmt.Errorf("row has %d fields, expected %d", len(row), len(f.header))
+	}
+
+	record := make(Record)
+	for j, field := range f.header {
+		record[field] = row[j]
+	}
 	return record, nil
 }
 
-// Close releases resources. For CSV feeder, this is a no-op.
+// Close releases resources.
 func (f *CSVFeeder) Close() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.file != nil {
+		return f.file.Close()
+	}
 	return nil
 }
 
 // Len returns the total number of records in the dataset.
 func (f *CSVFeeder) Len() int {
-	return len(f.records)
+	return f.recordCount
 }
