@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"time"
 
@@ -126,6 +127,13 @@ func (w *websocketRequester) Do(ctx context.Context) error {
 				if receiveCtx.Err() != nil {
 					break
 				}
+
+				// Check for net.Error timeout (e.g. read deadline exceeded)
+				var netErr net.Error
+				if errors.As(err, &netErr) && netErr.Timeout() {
+					break
+				}
+
 				// Other errors
 				meta = annotateStatus(meta, "websocket", websocketStatusFromError(err))
 				w.collector.RecordRequest(time.Since(start), err, meta)
