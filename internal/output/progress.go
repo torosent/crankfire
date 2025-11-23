@@ -15,6 +15,7 @@ type ProgressReporter struct {
 	collector *metrics.Collector
 	ticker    *time.Ticker
 	done      chan struct{}
+	finished  chan struct{}
 	writer    io.Writer
 	active    int32
 	start     time.Time
@@ -29,6 +30,7 @@ func NewProgressReporter(collector *metrics.Collector, interval time.Duration, w
 		collector: collector,
 		ticker:    time.NewTicker(interval),
 		done:      make(chan struct{}),
+		finished:  make(chan struct{}),
 		writer:    writer,
 		start:     time.Now(),
 	}
@@ -47,10 +49,12 @@ func (p *ProgressReporter) Stop() {
 	if atomic.CompareAndSwapInt32(&p.active, 1, 0) {
 		close(p.done)
 		p.ticker.Stop()
+		<-p.finished
 	}
 }
 
 func (p *ProgressReporter) run() {
+	defer close(p.finished)
 	for {
 		select {
 		case <-p.ticker.C:
