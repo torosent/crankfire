@@ -1,5 +1,11 @@
 # Crankfire
 
+[![Go Report Card](https://goreportcard.com/badge/github.com/torosent/crankfire)](https://goreportcard.com/report/github.com/torosent/crankfire)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/torosent/crankfire)](https://github.com/torosent/crankfire/releases)
+[![Go Build](https://github.com/torosent/crankfire/actions/workflows/release.yml/badge.svg)](https://github.com/torosent/crankfire/actions/workflows/release.yml)
+[![codecov](https://codecov.io/gh/torosent/crankfire/branch/main/graph/badge.svg)](https://codecov.io/gh/torosent/crankfire)
+
+
 High-signal load testing for HTTP, WebSocket, SSE, and gRPC from the CLI.
 
 Crankfire lets you describe realistic workloads against these protocols using one cohesive config model (choose one protocol per run). It’s built for engineers who care about **proper arrival modeling, protocol‑aware metrics, and tight CI/CD integration**—without running a cluster or a web UI.
