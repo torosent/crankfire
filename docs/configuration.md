@@ -30,17 +30,20 @@ Flags always override config file values.
 
 ### JSON
 
-
 ```json
 {
   "target": "https://api.example.com/users",
-  "concurrency": 10
+  "concurrency": 10,
   "rate": 100
 }
+```
 
 ### YAML
 
-
+```yaml
+target: https://api.example.com/users
+concurrency: 10
+rate: 100
 ```
 
 
@@ -49,7 +52,7 @@ Flags always override config file values.
 
 | Flag | Description |
 |------|-------------|
-| `--target` | Target URL (required). |
+| `--target` | Target URL (required unless using `--har` or endpoints with full URLs). |
 | `--method` | HTTP method (GET, POST, etc.). |
 | `--concurrency`, `-c` | Number of parallel workers. |
 | `--rate`, `-r` | Requests per second (0 = unlimited). |
@@ -83,11 +86,12 @@ Configure globally with:
 crankfire --arrival-model poisson ...
 ```
 
-or
+or in config:
 
+```yaml
 arrival:
   model: poisson
-arrival:
+```
 
 ## Load Patterns
 

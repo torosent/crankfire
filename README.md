@@ -21,6 +21,7 @@ Use Crankfire when you need more than a simple `curl` loop, but don’t want the
 - **Production‑grade metrics** – HDR histogram percentiles (P50/P90/P95/P99), per‑endpoint stats, and protocol‑specific error buckets.
 - **Live dashboard or JSON** – Watch tests in your terminal, or export structured JSON for automation.
 - **Auth & data built‑in** – OAuth2/OIDC helpers and CSV/JSON feeders for realistic test data.
+- **HAR import** – Record browser sessions and replay them as load tests with automatic filtering.
 - **Single binary** – Written in Go with minimal runtime dependencies.
 
 See the [full feature overview in the docs](https://torosent.github.io/crankfire/).
@@ -32,6 +33,7 @@ See the [full feature overview in the docs](https://torosent.github.io/crankfire
 | **Basic Load Testing** | ✅ | ✅ | ✅ | ✅ |
 | **Authentication** | ✅ | ✅ | ✅ | ✅ |
 | **Data Feeders** | ✅ | ✅ | ✅ | ✅ |
+| **HAR Import** | ✅ | — | — | — |
 | **Thresholds/Assertions** | ✅ | ✅ | ✅ | ✅ |
 | **Retries** | ✅ | ❌ | ❌ | ❌ |
 | **Protocol-Specific Metrics** | - | Messages sent/received, bytes | Events received, bytes | Calls, responses |
@@ -121,13 +123,21 @@ crankfire --config loadtest.yaml
 crankfire --target https://example.com --total 1000 --html-output report.html
 ```
 
+### From a HAR File
+
+Record a browser session and replay it as a load test:
+
+```bash
+crankfire --har recording.har --har-filter "host:api.example.com" --total 100
+```
+
 See the [Getting Started guide](https://torosent.github.io/crankfire/getting-started.html) for a step‑by‑step walkthrough.
 
 ## Command-Line Options (Overview)
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--target` | Target URL to test | (required) |
+| `--target` | Target URL to test | (required unless using `--har`) |
 | `--method` | HTTP method (GET, POST, PUT, DELETE, PATCH, etc.; case-insensitive, defaults to GET when omitted) | GET |
 | `--header` | Add HTTP header (`Key=Value`, repeatable; last wins) | - |
 | `--body` | Inline request body | - |
@@ -144,6 +154,8 @@ See the [Getting Started guide](https://torosent.github.io/crankfire/getting-sta
 | `--dashboard` | Show live terminal dashboard | false |
 | `--log-errors` | Log each failed request to stderr | false |
 | `--config` | Path to config file (JSON/YAML) | - |
+| `--har` | Path to HAR file to import as endpoints | - |
+| `--har-filter` | Filter HAR entries (e.g., `host:example.com` or `method:GET,POST`) | - |
 | `--feeder-path` | Path to CSV/JSON file for per-request data injection | - |
 | `--feeder-type` | Feeder file type (`csv` or `json`) | - |
 | `--protocol` | Protocol mode (`http`, `websocket`, or `sse`) | http |

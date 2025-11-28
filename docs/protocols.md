@@ -48,7 +48,7 @@ crankfire --protocol websocket \
 
 WebSocket runs reuse the global headers section, so OAuth tokens (from the `auth` block) and feeder placeholders flow into the handshake plus each message you send.
 
-See [Usage Examples](usage.md) for more recipes.
+See [Usage Examples](USAGE.md) for more recipes.
 
 ## Server-Sent Events (SSE)
 
@@ -85,4 +85,4 @@ Key points:
 - Metadata supplied via `--grpc-metadata key=value` (or `grpc.metadata`) and OAuth tokens both appear as lowercase gRPC metadata headers.
 - TLS, insecure, and timeout settings mirror the CLI flags.
 
-See [Usage Examples](usage.md) for TLS, metadata, and feeder integration.
+See [Usage Examples](USAGE.md) for TLS, metadata, and feeder integration.

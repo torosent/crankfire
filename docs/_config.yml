@@ -1,5 +1,5 @@
 title: Crankfire
-description: Aload testing CLI for modern APIs and real-time systems.
+description: A load testing CLI for modern APIs and real-time systems.
 remote_theme: pages-themes/hacker@v0.2.0
 plugins:
   - jekyll-seo-tag
