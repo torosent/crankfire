@@ -21,6 +21,7 @@ Use Crankfire when you need more than a simple `curl` loop, but don’t want the
 - **Production‑grade metrics** – HDR histogram percentiles (P50/P90/P95/P99), per‑endpoint stats, and protocol‑specific error buckets.
 - **Live dashboard or JSON** – Watch tests in your terminal, or export structured JSON for automation.
 - **Auth & data built‑in** – OAuth2/OIDC helpers and CSV/JSON feeders for realistic test data.
+- **Request chaining** – Extract values from responses (JSON path, regex) and use them in subsequent requests.
 - **HAR import** – Record browser sessions and replay them as load tests with automatic filtering.
 - **Single binary** – Written in Go with minimal runtime dependencies.
 
@@ -33,6 +34,7 @@ See the [full feature overview in the docs](https://torosent.github.io/crankfire
 | **Basic Load Testing** | ✅ | ✅ | ✅ | ✅ |
 | **Authentication** | ✅ | ✅ | ✅ | ✅ |
 | **Data Feeders** | ✅ | ✅ | ✅ | ✅ |
+| **Request Chaining** | ✅ | — | — | — |
 | **HAR Import** | ✅ | — | — | — |
 | **Thresholds/Assertions** | ✅ | ✅ | ✅ | ✅ |
 | **Retries** | ✅ | ❌ | ❌ | ❌ |
@@ -304,7 +306,36 @@ feeder:
 body: '{"product_id": "{{.product_id}}", "quantity": {{.quantity}}}'
 ```
 
-### 4. gRPC Load Test
+### 4. Request Chaining (Extract & Reuse)
+
+Extract values from responses and use them in subsequent requests. Perfect for workflows like login → use token → access protected resources.
+
+```yaml
+target: https://api.example.com
+concurrency: 10
+endpoints:
+  - name: "login"
+    weight: 1
+    method: POST
+    path: /auth/login
+    body: '{"email": "user@example.com", "password": "secret"}'
+    extractors:
+      - jsonpath: $.token
+        var: auth_token
+      - jsonpath: $.user.id
+        var: user_id
+
+  - name: "get-profile"
+    weight: 3
+    method: GET
+    path: /users/{{user_id}}
+    headers:
+      Authorization: "Bearer {{auth_token}}"
+```
+
+See the [Request Chaining documentation](https://torosent.github.io/crankfire/request-chaining) for JSON path, regex extraction, defaults, and error handling.
+
+### 5. gRPC Load Test
 
 Load test a gRPC service using a Protocol Buffers definition.
 
