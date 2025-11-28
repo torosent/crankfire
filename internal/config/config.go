@@ -50,9 +50,10 @@ type Config struct {
 type LoadPatternType string
 
 const (
-	LoadPatternTypeRamp  LoadPatternType = "ramp"
-	LoadPatternTypeStep  LoadPatternType = "step"
-	LoadPatternTypeSpike LoadPatternType = "spike"
+	LoadPatternTypeConstant LoadPatternType = "constant"
+	LoadPatternTypeRamp     LoadPatternType = "ramp"
+	LoadPatternTypeStep     LoadPatternType = "step"
+	LoadPatternTypeSpike    LoadPatternType = "spike"
 )
 
 type LoadPattern struct {
@@ -311,6 +312,13 @@ func validateLoadPatterns(patterns []LoadPattern) []string {
 			continue
 		}
 		switch LoadPatternType(strings.ToLower(typeLabel)) {
+		case LoadPatternTypeConstant:
+			if pattern.RPS <= 0 {
+				issues = append(issues, fmt.Sprintf("loadPatterns[%d]: rps must be > 0 for constant", idx))
+			}
+			if pattern.Duration <= 0 {
+				issues = append(issues, fmt.Sprintf("loadPatterns[%d]: duration must be > 0 for constant", idx))
+			}
 		case LoadPatternTypeRamp:
 			if pattern.Duration <= 0 {
 				issues = append(issues, fmt.Sprintf("loadPatterns[%d]: duration must be > 0 for ramp", idx))

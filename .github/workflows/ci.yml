@@ -23,8 +23,11 @@ jobs:
       - name: Download modules
         run: go mod download
 
-      - name: Run tests
+      - name: Run unit tests
         run: go test -race -coverprofile=coverage.txt -covermode=atomic ./...
+
+      - name: Run integration tests
+        run: go test -v -tags=integration -race -timeout 15m ./cmd/crankfire/integration_test/
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5

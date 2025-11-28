@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -67,6 +68,9 @@ func runHTTPServer(port int) error {
 	mux.HandleFunc("/api/users", handleAPIUsers)
 	mux.HandleFunc("/api/orders", handleAPIOrders)
 	mux.HandleFunc("/api/orders/", handleAPIOrderByID)
+	// Features matrix test endpoints
+	mux.HandleFunc("/timestamp", handleTimestamp)
+	mux.HandleFunc("/echo", handleEcho)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusOK, map[string]any{"ok": true, "path": r.URL.Path})
 	})
@@ -221,6 +225,36 @@ func handleAPIOrderByID(w http.ResponseWriter, r *http.Request) {
 	default:
 		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
 	}
+}
+
+// Features matrix test handlers
+
+func handleTimestamp(w http.ResponseWriter, r *http.Request) {
+	// Return current server timestamp for timing validation
+	respondJSON(w, http.StatusOK, map[string]any{
+		"timestamp": time.Now().UnixNano(),
+		"iso":       time.Now().UTC().Format(time.RFC3339Nano),
+		"unix":      time.Now().Unix(),
+	})
+}
+
+func handleEcho(w http.ResponseWriter, r *http.Request) {
+	// Echo request details (method, headers, body) for validation
+	body := ""
+	if r.Body != nil {
+		bodyBytes, _ := io.ReadAll(r.Body)
+		body = string(bodyBytes)
+	}
+
+	respondJSON(w, http.StatusOK, map[string]any{
+		"method":       r.Method,
+		"path":         r.URL.Path,
+		"query":        r.URL.RawQuery,
+		"headers":      r.Header,
+		"body":         body,
+		"content_type": r.Header.Get("Content-Type"),
+		"timestamp":    time.Now().UnixNano(),
+	})
 }
 
 func respondJSON(w http.ResponseWriter, status int, payload any) {
