@@ -13,6 +13,7 @@ import (
 	"github.com/torosent/crankfire/internal/config"
 	"github.com/torosent/crankfire/internal/httpclient"
 	"github.com/torosent/crankfire/internal/metrics"
+	"github.com/torosent/crankfire/internal/placeholders"
 	"github.com/torosent/crankfire/internal/pool"
 	ws "github.com/torosent/crankfire/internal/websocket"
 )
@@ -55,7 +56,7 @@ func (w *websocketRequester) Do(ctx context.Context) error {
 
 	target := w.target
 	if len(record) > 0 {
-		target = applyPlaceholders(target, record)
+		target = placeholders.Apply(target, record)
 	}
 
 	wsHeaders, err := w.helper.prepareHeaders(ctx, w.headers, record)
@@ -93,7 +94,7 @@ func (w *websocketRequester) Do(ctx context.Context) error {
 	messages := append([]string(nil), w.cfg.Messages...)
 	if len(record) > 0 {
 		for i, msg := range messages {
-			messages[i] = applyPlaceholders(msg, record)
+			messages[i] = placeholders.Apply(msg, record)
 		}
 	}
 

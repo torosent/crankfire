@@ -10,6 +10,7 @@ import (
 	"github.com/torosent/crankfire/internal/config"
 	"github.com/torosent/crankfire/internal/httpclient"
 	"github.com/torosent/crankfire/internal/metrics"
+	"github.com/torosent/crankfire/internal/placeholders"
 	"github.com/torosent/crankfire/internal/pool"
 	"github.com/torosent/crankfire/internal/sse"
 )
@@ -52,7 +53,7 @@ func (s *sseRequester) Do(ctx context.Context) error {
 
 	target := s.target
 	if len(record) > 0 {
-		target = applyPlaceholders(target, record)
+		target = placeholders.Apply(target, record)
 	}
 
 	requestHeaders, err := s.helper.prepareHeaders(ctx, s.headers, record)

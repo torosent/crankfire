@@ -16,6 +16,7 @@ import (
 	"github.com/torosent/crankfire/internal/grpcclient"
 	"github.com/torosent/crankfire/internal/httpclient"
 	"github.com/torosent/crankfire/internal/metrics"
+	"github.com/torosent/crankfire/internal/placeholders"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/protoadapt"
@@ -59,33 +60,27 @@ func (g *grpcRequester) Do(ctx context.Context) error {
 
 	methodDesc, err := g.methodDescriptor()
 	if err != nil {
-		meta = annotateStatus(meta, "grpc", fallbackStatusCode(err))
-		g.collector.RecordRequest(time.Since(start), err, meta)
-		return fmt.Errorf("load proto descriptor: %w", err)
+		return g.helper.recordError(start, meta, "grpc", "load proto descriptor", err)
 	}
 
 	target := g.target
 	if len(record) > 0 {
-		target = applyPlaceholders(target, record)
+		target = placeholders.Apply(target, record)
 	}
 
 	metadata := buildGRPCMetadata(g.cfg.Metadata, record)
 	if metadata, err = injectGRPCAuth(ctx, g.auth, metadata); err != nil {
-		meta = annotateStatus(meta, "grpc", fallbackStatusCode(err))
-		g.collector.RecordRequest(time.Since(start), err, meta)
-		return fmt.Errorf("grpc auth metadata: %w", err)
+		return g.helper.recordError(start, meta, "grpc", "grpc auth metadata", err)
 	}
 
 	messagePayload := g.cfg.Message
 	if len(record) > 0 {
-		messagePayload = applyPlaceholders(messagePayload, record)
+		messagePayload = placeholders.Apply(messagePayload, record)
 	}
 
 	reqMsg, err := buildDynamicRequest(methodDesc, messagePayload)
 	if err != nil {
-		meta = annotateStatus(meta, "grpc", fallbackStatusCode(err))
-		g.collector.RecordRequest(time.Since(start), err, meta)
-		return fmt.Errorf("grpc request payload: %w", err)
+		return g.helper.recordError(start, meta, "grpc", "grpc request payload", err)
 	}
 	respMsg := dynamic.NewMessage(methodDesc.GetOutputType())
 
@@ -218,7 +213,7 @@ func buildGRPCMetadata(base map[string]string, record map[string]string) map[str
 	if len(base) == 0 && len(record) == 0 {
 		return nil
 	}
-	plhdr := applyPlaceholdersToMap(base, record)
+	plhdr := placeholders.ApplyToMap(base, record)
 	if len(plhdr) == 0 {
 		return nil
 	}
@@ -237,14 +232,14 @@ func injectGRPCAuth(ctx context.Context, provider auth.Provider, metadata map[st
 	if provider == nil {
 		return metadata, nil
 	}
-	token, err := provider.Token(ctx)
+	bearer, err := GetBearerToken(ctx, provider)
 	if err != nil {
 		return metadata, err
 	}
 	if metadata == nil {
 		metadata = map[string]string{}
 	}
-	metadata["authorization"] = fmt.Sprintf("Bearer %s", token)
+	metadata["authorization"] = bearer
 	return metadata, nil
 }
 

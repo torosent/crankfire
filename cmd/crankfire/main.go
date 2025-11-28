@@ -22,15 +22,6 @@ import (
 	"github.com/torosent/crankfire/internal/threshold"
 )
 
-// makeHeaders converts a map[string]string to http.Header
-func makeHeaders(headers map[string]string) http.Header {
-	h := make(http.Header)
-	for k, v := range headers {
-		h.Set(k, v)
-	}
-	return h
-}
-
 const (
 	progressInterval = time.Second
 	baseRetryDelay   = 100 * time.Millisecond

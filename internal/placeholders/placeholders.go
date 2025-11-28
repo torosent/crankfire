@@ -1,4 +1,4 @@
-package main
+package placeholders
 
 import (
 	"regexp"
@@ -7,9 +7,9 @@ import (
 	"github.com/torosent/crankfire/internal/variables"
 )
 
-// applyPlaceholders applies placeholders with optional variable store support.
+// Apply applies placeholders with optional variable store support.
 // Supports priority: 1. Variable Store, 2. Feeder Record, 3. Default values ({{key|default}})
-func applyPlaceholders(template string, record map[string]string, stores ...variables.Store) string {
+func Apply(template string, record map[string]string, stores ...variables.Store) string {
 	// If no record and no store, return template as-is
 	if len(record) == 0 && len(stores) == 0 {
 		return template
@@ -63,22 +63,13 @@ func applyPlaceholders(template string, record map[string]string, stores ...vari
 	return result
 }
 
-func applyPlaceholdersToMap(values map[string]string, record map[string]string, stores ...variables.Store) map[string]string {
+func ApplyToMap(values map[string]string, record map[string]string, stores ...variables.Store) map[string]string {
 	if len(values) == 0 {
 		return nil
 	}
 	out := make(map[string]string, len(values))
 	for key, value := range values {
-		out[key] = applyPlaceholders(value, record, stores...)
+		out[key] = Apply(value, record, stores...)
 	}
 	return out
-}
-
-// Legacy aliases for backward compatibility - these use the new consolidated functions
-func applyPlaceholdersWithVariables(template string, record map[string]string, store variables.Store) string {
-	return applyPlaceholders(template, record, store)
-}
-
-func applyPlaceholdersToMapWithVariables(values map[string]string, record map[string]string, store variables.Store) map[string]string {
-	return applyPlaceholdersToMap(values, record, store)
 }

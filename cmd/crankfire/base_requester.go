@@ -9,7 +9,17 @@ import (
 	"github.com/torosent/crankfire/internal/auth"
 	"github.com/torosent/crankfire/internal/httpclient"
 	"github.com/torosent/crankfire/internal/metrics"
+	"github.com/torosent/crankfire/internal/placeholders"
 )
+
+// makeHeaders converts a map[string]string to http.Header
+func makeHeaders(headers map[string]string) http.Header {
+	h := make(http.Header)
+	for k, v := range headers {
+		h.Set(k, v)
+	}
+	return h
+}
 
 // baseRequesterHelper provides shared functionality for all requester types.
 type baseRequesterHelper struct {
@@ -41,7 +51,7 @@ func (b *baseRequesterHelper) getFeederRecord(ctx context.Context) (map[string]s
 
 // prepareHeaders applies placeholders to headers and injects auth if configured.
 func (b *baseRequesterHelper) prepareHeaders(ctx context.Context, baseHeaders map[string]string, record map[string]string) (http.Header, error) {
-	headerMap := applyPlaceholdersToMap(baseHeaders, record)
+	headerMap := placeholders.ApplyToMap(baseHeaders, record)
 	headers := makeHeaders(headerMap)
 	if err := ensureAuthHeader(ctx, b.auth, headers); err != nil {
 		return nil, fmt.Errorf("auth header: %w", err)

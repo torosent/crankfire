@@ -132,7 +132,7 @@ func TestHTTPRequester_ExtractsJSONPath(t *testing.T) {
 
 	// Create a variable store and attach to context
 	store := variables.NewStore()
-	ctx := contextWithVariableStore(context.Background(), store)
+	ctx := variables.NewContext(context.Background(), store)
 
 	// Create endpoint template with extractor
 	tmpl := &endpointTemplate{
@@ -189,7 +189,7 @@ func TestHTTPRequester_ExtractsRegex(t *testing.T) {
 	}
 
 	store := variables.NewStore()
-	ctx := contextWithVariableStore(context.Background(), store)
+	ctx := variables.NewContext(context.Background(), store)
 
 	tmpl := &endpointTemplate{
 		name:    "test",
@@ -246,7 +246,7 @@ func TestHTTPRequester_ExtractorChaining(t *testing.T) {
 	}
 
 	store := variables.NewStore()
-	ctx := contextWithVariableStore(context.Background(), store)
+	ctx := variables.NewContext(context.Background(), store)
 
 	tmpl := &endpointTemplate{
 		name:    "test",
@@ -303,7 +303,7 @@ func TestHTTPRequester_ExtractorNoMatch_Continues(t *testing.T) {
 	}
 
 	store := variables.NewStore()
-	ctx := contextWithVariableStore(context.Background(), store)
+	ctx := variables.NewContext(context.Background(), store)
 
 	// Extractor looking for a missing field
 	tmpl := &endpointTemplate{
@@ -361,7 +361,7 @@ func TestHTTPRequester_ExtractOnError_WhenEnabled(t *testing.T) {
 	}
 
 	store := variables.NewStore()
-	ctx := contextWithVariableStore(context.Background(), store)
+	ctx := variables.NewContext(context.Background(), store)
 
 	// Extractor with OnError=true
 	tmpl := &endpointTemplate{
@@ -420,7 +420,7 @@ func TestHTTPRequester_NoExtractOnError_WhenDisabled(t *testing.T) {
 	}
 
 	store := variables.NewStore()
-	ctx := contextWithVariableStore(context.Background(), store)
+	ctx := variables.NewContext(context.Background(), store)
 
 	// Extractor with OnError=false (default)
 	tmpl := &endpointTemplate{

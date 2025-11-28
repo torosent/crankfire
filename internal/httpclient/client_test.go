@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/torosent/crankfire/internal/config"
+	"github.com/torosent/crankfire/internal/placeholders"
 )
 
 func TestBuildRequestWithHeaders(t *testing.T) {
@@ -572,9 +573,9 @@ func TestSubstitutePlaceholders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := substitutePlaceholders(tt.template, tt.record)
+			got := placeholders.Apply(tt.template, tt.record)
 			if got != tt.want {
-				t.Errorf("substitutePlaceholders(%q) = %q, want %q", tt.template, got, tt.want)
+				t.Errorf("placeholders.Apply(%q) = %q, want %q", tt.template, got, tt.want)
 			}
 		})
 	}

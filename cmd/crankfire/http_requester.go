@@ -16,6 +16,7 @@ import (
 	"github.com/torosent/crankfire/internal/httpclient"
 	"github.com/torosent/crankfire/internal/metrics"
 	"github.com/torosent/crankfire/internal/runner"
+	"github.com/torosent/crankfire/internal/variables"
 )
 
 const (
@@ -45,23 +46,17 @@ func (r *httpRequester) Do(ctx context.Context) error {
 	}
 	if builder == nil {
 		err := fmt.Errorf("request builder is not configured")
-		meta = annotateStatus(meta, "http", fallbackStatusCode(err))
-		r.collector.RecordRequest(time.Since(start), err, meta)
-		return err
+		return r.helper.recordError(start, meta, "http", "setup", err)
 	}
 	req, err := builder.Build(ctx)
 	if err != nil {
-		meta = annotateStatus(meta, "http", fallbackStatusCode(err))
-		r.collector.RecordRequest(time.Since(start), err, meta)
-		return err
+		return r.helper.recordError(start, meta, "http", "build", err)
 	}
 
 	resp, err := r.client.Do(req)
 	latency := time.Since(start)
 	if err != nil {
-		meta = annotateStatus(meta, "http", fallbackStatusCode(err))
-		r.collector.RecordRequest(latency, err, meta)
-		return err
+		return r.helper.recordError(start, meta, "http", "execute", err)
 	}
 	defer resp.Body.Close()
 
@@ -136,7 +131,7 @@ func storeExtractedValues(ctx context.Context, values map[string]string) {
 	if len(values) == 0 {
 		return
 	}
-	store := variableStoreFromContext(ctx)
+	store := variables.FromContext(ctx)
 	if store == nil {
 		return
 	}
