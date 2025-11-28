@@ -4,95 +4,82 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/torosent/crankfire/internal/auth"
 	"github.com/torosent/crankfire/internal/config"
 	"github.com/torosent/crankfire/internal/httpclient"
 	"github.com/torosent/crankfire/internal/metrics"
+	"github.com/torosent/crankfire/internal/placeholders"
+	"github.com/torosent/crankfire/internal/pool"
 	"github.com/torosent/crankfire/internal/sse"
 )
 
 type sseRequester struct {
-	cfg         *config.SSEConfig
-	target      string
-	headers     map[string]string
-	collector   *metrics.Collector
-	auth        auth.Provider
-	feeder      httpclient.Feeder
-	concurrency int
-	pools       sync.Map // map[string]chan *sse.Client
+	cfg       *config.SSEConfig
+	target    string
+	headers   map[string]string
+	collector *metrics.Collector
+	auth      auth.Provider
+	feeder    httpclient.Feeder
+	connPool  *pool.ConnectionPool
+	helper    baseRequesterHelper
 }
 
 func newSSERequester(cfg *config.Config, collector *metrics.Collector, provider auth.Provider, feeder httpclient.Feeder) *sseRequester {
 	return &sseRequester{
-		cfg:         &cfg.SSE,
-		target:      cfg.TargetURL,
-		headers:     cfg.Headers,
-		collector:   collector,
-		auth:        provider,
-		feeder:      feeder,
-		concurrency: cfg.Concurrency,
+		cfg:       &cfg.SSE,
+		target:    cfg.TargetURL,
+		headers:   cfg.Headers,
+		collector: collector,
+		auth:      provider,
+		feeder:    feeder,
+		connPool:  pool.NewConnectionPool(cfg.Concurrency),
+		helper: baseRequesterHelper{
+			collector: collector,
+			auth:      provider,
+			feeder:    feeder,
+		},
 	}
 }
 
 func (s *sseRequester) Do(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx, start, meta := s.helper.initRequest(ctx, "sse")
 
-	start := time.Now()
-	meta := &metrics.RequestMetadata{Protocol: "sse"}
-
-	record, err := nextFeederRecord(ctx, s.feeder)
+	record, err := s.helper.getFeederRecord(ctx)
 	if err != nil {
-		meta := annotateStatus(meta, "sse", fallbackStatusCode(err))
-		s.collector.RecordRequest(time.Since(start), err, meta)
-		return fmt.Errorf("sse feeder: %w", err)
+		return s.helper.recordError(start, meta, "sse", "feeder", err)
 	}
 
 	target := s.target
 	if len(record) > 0 {
-		target = applyPlaceholders(target, record)
+		target = placeholders.Apply(target, record)
 	}
 
-	headerMap := applyPlaceholdersToMap(s.headers, record)
-	requestHeaders := makeHeaders(headerMap)
-	if err := ensureAuthHeader(ctx, s.auth, requestHeaders); err != nil {
-		meta := annotateStatus(meta, "sse", fallbackStatusCode(err))
-		s.collector.RecordRequest(time.Since(start), err, meta)
-		return fmt.Errorf("sse auth header: %w", err)
+	requestHeaders, err := s.helper.prepareHeaders(ctx, s.headers, record)
+	if err != nil {
+		return s.helper.recordError(start, meta, "sse", "auth", err)
 	}
 
-	// Get or create pool for this target+headers combination
-	poolKey := makePoolKey(target, requestHeaders)
-	poolVal, _ := s.pools.LoadOrStore(poolKey, make(chan *sse.Client, s.concurrency))
-	pool := poolVal.(chan *sse.Client)
+	// Get or create client from pool
+	poolKey := pool.MakePoolKey(target, requestHeaders)
 
-	var client *sse.Client
-	var reused bool
-
-	// Try to get an existing connection from the pool
-	select {
-	case client = <-pool:
-		reused = true
-	default:
-		// Create new client if pool is empty
+	factory := func() pool.Poolable {
 		sseCfg := sse.Config{
 			URL:     target,
 			Headers: requestHeaders,
 			Timeout: s.cfg.ReadTimeout,
 		}
-		client = sse.NewClient(sseCfg)
+		return sse.NewClient(sseCfg)
 	}
+
+	poolable, reused := s.connPool.Get(poolKey, factory)
+	client := poolable.(*sse.Client)
 
 	// Connect if not reused
 	if !reused {
 		if err := client.Connect(ctx); err != nil {
-			meta = annotateStatus(meta, "sse", sseStatusCode(err))
-			s.collector.RecordRequest(time.Since(start), err, meta)
-			return fmt.Errorf("sse connect: %w", err)
+			return s.helper.recordError(start, meta, "sse", "connect", err)
 		}
 	}
 
@@ -121,16 +108,14 @@ func (s *sseRequester) Do(ctx context.Context) error {
 			// If this is a reused connection and we failed on the first read,
 			// it's likely a stale connection. Try to reconnect once.
 			if reused && eventsRead == 0 {
-				client.Close()
-				if connErr := client.Connect(ctx); connErr == nil {
-					reused = false
-					// Update baseline metrics if needed, though cumulative counters persist.
-					// We just continue the loop to retry the read.
-					continue
-				} else {
-					opErr = fmt.Errorf("reconnect failed: %w", connErr)
+				newPoolable, ok := s.connPool.RetryStaleConnection(ctx, client, factory)
+				if !ok {
+					opErr = fmt.Errorf("reconnect failed")
 					break
 				}
+				client = newPoolable.(*sse.Client)
+				reused = false
+				continue
 			}
 
 			// Check if it's a context error (expected timeout/cancellation)
@@ -169,16 +154,15 @@ func (s *sseRequester) Do(ctx context.Context) error {
 	}
 
 	// If successful, return client to pool
-	select {
-	case pool <- client:
-		// Returned to pool
-	default:
-		// Pool full (shouldn't happen if sized correctly, but safe to close)
-		client.Close()
-	}
+	s.connPool.Put(poolKey, client)
 
 	s.collector.RecordRequest(latency, nil, meta)
 	return nil
+}
+
+// Close releases all SSE connections held in the connection pool.
+func (s *sseRequester) Close() error {
+	return s.connPool.Close()
 }
 
 func sseStatusCode(err error) string {

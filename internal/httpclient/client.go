@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/torosent/crankfire/internal/config"
+	"github.com/torosent/crankfire/internal/placeholders"
+	"github.com/torosent/crankfire/internal/variables"
 )
 
 // AuthProvider supplies authentication tokens and injects them into HTTP requests.
@@ -139,25 +141,26 @@ func (b *RequestBuilder) Build(ctx context.Context) (*http.Request, error) {
 		}
 	}
 
+	// Get variable store from context
+	store := variables.FromContext(ctx)
+
 	// Apply placeholder substitution to target URL
 	target := b.target
-	if record != nil {
-		target = substitutePlaceholders(target, record)
-	}
+	target = placeholders.Apply(target, record, store)
 
 	reader, err := b.body.NewReader()
 	if err != nil {
 		return nil, err
 	}
 
-	// If feeder is present, apply substitution to body
-	if record != nil {
+	// If feeder or store is present, apply substitution to body
+	if record != nil || store != nil {
 		bodyBytes, err := io.ReadAll(reader)
 		_ = reader.Close()
 		if err != nil {
 			return nil, fmt.Errorf("read body for substitution: %w", err)
 		}
-		bodyStr := substitutePlaceholders(string(bodyBytes), record)
+		bodyStr := placeholders.Apply(string(bodyBytes), record, store)
 		reader = io.NopCloser(strings.NewReader(bodyStr))
 	}
 
@@ -172,9 +175,7 @@ func (b *RequestBuilder) Build(ctx context.Context) (*http.Request, error) {
 		for key, values := range b.headers {
 			for _, val := range values {
 				// Apply placeholder substitution to header values
-				if record != nil {
-					val = substitutePlaceholders(val, record)
-				}
+				val = placeholders.Apply(val, record, store)
 				req.Header.Add(key, val)
 			}
 		}
@@ -196,16 +197,6 @@ func (b *RequestBuilder) Build(ctx context.Context) (*http.Request, error) {
 	}
 
 	return req, nil
-}
-
-// substitutePlaceholders replaces {{field_name}} patterns with values from the record.
-func substitutePlaceholders(template string, record map[string]string) string {
-	result := template
-	for key, value := range record {
-		placeholder := "{{" + key + "}}"
-		result = strings.ReplaceAll(result, placeholder, value)
-	}
-	return result
 }
 
 func NewClient(timeout time.Duration) *http.Client {

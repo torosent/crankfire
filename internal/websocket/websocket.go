@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/torosent/crankfire/internal/clientmetrics"
 )
 
 // Message represents a WebSocket message to send or receive.
@@ -28,17 +29,12 @@ type Metrics struct {
 
 // Client represents a WebSocket client connection.
 type Client struct {
-	url          string
-	headers      http.Header
-	dialer       *websocket.Dialer
-	conn         *websocket.Conn
-	mu           sync.Mutex
-	connectTime  time.Time
-	messagesSent int64
-	messagesRecv int64
-	bytesSent    int64
-	bytesRecv    int64
-	errors       int64
+	url     string
+	headers http.Header
+	dialer  *websocket.Dialer
+	conn    *websocket.Conn
+	mu      sync.Mutex
+	metrics *clientmetrics.ClientMetrics
 }
 
 // Config configures the WebSocket client behavior.
@@ -70,6 +66,7 @@ func NewClient(cfg Config) *Client {
 		url:     cfg.URL,
 		headers: cfg.Headers,
 		dialer:  dialer,
+		metrics: clientmetrics.New(),
 	}
 }
 
@@ -84,7 +81,7 @@ func (c *Client) Connect(ctx context.Context) error {
 
 	conn, resp, err := c.dialer.DialContext(ctx, c.url, c.headers)
 	if err != nil {
-		c.errors++
+		c.metrics.IncrementErrors()
 		if resp != nil {
 			return fmt.Errorf("websocket dial failed with status %d: %w", resp.StatusCode, err)
 		}
@@ -92,7 +89,7 @@ func (c *Client) Connect(ctx context.Context) error {
 	}
 
 	c.conn = conn
-	c.connectTime = time.Now()
+	c.metrics.MarkConnected()
 
 	return nil
 }
@@ -107,12 +104,11 @@ func (c *Client) SendMessage(ctx context.Context, msg Message) error {
 	}
 
 	if err := c.conn.WriteMessage(msg.Type, msg.Data); err != nil {
-		c.errors++
+		c.metrics.IncrementErrors()
 		return fmt.Errorf("write message: %w", err)
 	}
 
-	c.messagesSent++
-	c.bytesSent += int64(len(msg.Data))
+	c.metrics.IncrementSent(int64(len(msg.Data)))
 
 	return nil
 }
@@ -141,16 +137,11 @@ func (c *Client) ReceiveMessage(ctx context.Context) (Message, error) {
 
 	msgType, data, err := conn.ReadMessage()
 	if err != nil {
-		c.mu.Lock()
-		c.errors++
-		c.mu.Unlock()
+		c.metrics.IncrementErrors()
 		return Message{}, fmt.Errorf("read message: %w", err)
 	}
 
-	c.mu.Lock()
-	c.messagesRecv++
-	c.bytesRecv += int64(len(data))
-	c.mu.Unlock()
+	c.metrics.IncrementReceived(int64(len(data)))
 
 	return Message{Type: msgType, Data: data}, nil
 }
@@ -183,20 +174,13 @@ func (c *Client) Close() error {
 
 // Metrics returns the current metrics snapshot.
 func (c *Client) Metrics() Metrics {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	duration := time.Duration(0)
-	if !c.connectTime.IsZero() {
-		duration = time.Since(c.connectTime)
-	}
-
+	snapshot := c.metrics.Snapshot()
 	return Metrics{
-		ConnectionDuration: duration,
-		MessagesSent:       c.messagesSent,
-		MessagesReceived:   c.messagesRecv,
-		BytesSent:          c.bytesSent,
-		BytesReceived:      c.bytesRecv,
-		Errors:             c.errors,
+		ConnectionDuration: snapshot.ConnectionDuration,
+		MessagesSent:       snapshot.MessagesSent,
+		MessagesReceived:   snapshot.MessagesReceived,
+		BytesSent:          snapshot.BytesSent,
+		BytesReceived:      snapshot.BytesReceived,
+		Errors:             snapshot.Errors,
 	}
 }

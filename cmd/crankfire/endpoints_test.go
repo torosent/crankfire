@@ -262,7 +262,7 @@ func TestEndpointSelectionReusesVariableStore(t *testing.T) {
 	}
 
 	store := variables.NewStore()
-	ctx := contextWithVariableStore(context.Background(), store)
+	ctx := variables.NewContext(context.Background(), store)
 
 	storeRecorder := &variableStoreRecorder{}
 	wrapped := selector.Wrap(storeRecorder)
@@ -281,6 +281,6 @@ type variableStoreRecorder struct {
 }
 
 func (r *variableStoreRecorder) Do(ctx context.Context) error {
-	r.store = variableStoreFromContext(ctx)
+	r.store = variables.FromContext(ctx)
 	return nil
 }

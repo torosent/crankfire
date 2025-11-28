@@ -56,6 +56,18 @@ func buildAuthProvider(cfg *config.Config) (auth.Provider, error) {
 	}
 }
 
+// GetBearerToken retrieves a token from the provider and formats it as a Bearer string.
+func GetBearerToken(ctx context.Context, provider auth.Provider) (string, error) {
+	if provider == nil {
+		return "", nil
+	}
+	token, err := provider.Token(ctx)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Bearer %s", token), nil
+}
+
 func ensureAuthHeader(ctx context.Context, provider auth.Provider, headers http.Header) error {
 	if provider == nil {
 		return nil
@@ -63,10 +75,10 @@ func ensureAuthHeader(ctx context.Context, provider auth.Provider, headers http.
 	if headers == nil {
 		return fmt.Errorf("headers cannot be nil")
 	}
-	token, err := provider.Token(ctx)
+	bearer, err := GetBearerToken(ctx, provider)
 	if err != nil {
 		return err
 	}
-	headers.Set("Authorization", fmt.Sprintf("Bearer %s", token))
+	headers.Set("Authorization", bearer)
 	return nil
 }

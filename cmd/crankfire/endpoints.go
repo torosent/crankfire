@@ -226,9 +226,9 @@ func (e *endpointSelectionRequester) Do(ctx context.Context) error {
 	}
 
 	// Create a variable store for this worker if not already present
-	if variableStoreFromContext(ctx) == nil {
+	if variables.FromContext(ctx) == nil {
 		store := variables.NewStore()
-		ctx = contextWithVariableStore(ctx, store)
+		ctx = variables.NewContext(ctx, store)
 	}
 
 	tmpl := e.selector.pickTemplate()
@@ -249,30 +249,6 @@ func endpointFromContext(ctx context.Context) *endpointTemplate {
 	}
 	if tmpl, ok := ctx.Value(endpointContextKey).(*endpointTemplate); ok {
 		return tmpl
-	}
-	return nil
-}
-
-type variableStoreCtxKey struct{}
-
-var variableStoreContextKey = variableStoreCtxKey{}
-
-// contextWithVariableStore returns a new context with the variable store attached.
-func contextWithVariableStore(ctx context.Context, store variables.Store) context.Context {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return context.WithValue(ctx, variableStoreContextKey, store)
-}
-
-// variableStoreFromContext retrieves the variable store from the context.
-// Returns nil if not found.
-func variableStoreFromContext(ctx context.Context) variables.Store {
-	if ctx == nil {
-		return nil
-	}
-	if store, ok := ctx.Value(variableStoreContextKey).(variables.Store); ok {
-		return store
 	}
 	return nil
 }

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/torosent/crankfire/internal/clientmetrics"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -34,10 +35,8 @@ type Client struct {
 	method     string
 	md         metadata.MD
 	mu         sync.Mutex
-	callCount  int64
-	bytesSent  int64
-	bytesRecv  int64
-	errors     int64
+	metrics    *clientmetrics.ClientMetrics
+	callCount  int64 // Track calls separately for gRPC-specific logic
 	useTLS     bool
 	insecure   bool
 	lastStatus string
@@ -68,6 +67,7 @@ func NewClient(cfg Config) (*Client, error) {
 		useTLS:     cfg.UseTLS,
 		insecure:   cfg.Insecure,
 		lastStatus: "UNSET",
+		metrics:    clientmetrics.New(),
 	}
 	return client, nil
 }
@@ -129,6 +129,7 @@ func NewClientWithConn(conn *grpc.ClientConn, cfg Config) *Client {
 		useTLS:     cfg.UseTLS,
 		insecure:   cfg.Insecure,
 		lastStatus: "UNSET",
+		metrics:    clientmetrics.New(),
 	}
 }
 
@@ -174,14 +175,15 @@ func (c *Client) Invoke(ctx context.Context, req proto.Message, resp proto.Messa
 
 	c.mu.Lock()
 	c.callCount++
-	c.bytesSent += int64(len(reqBytes))
-	if err != nil {
-		c.errors++
-	} else {
-		c.bytesRecv += int64(len(respBytes))
-	}
 	c.lastStatus = code
 	c.mu.Unlock()
+
+	c.metrics.IncrementSent(int64(len(reqBytes)))
+	if err != nil {
+		c.metrics.IncrementErrors()
+	} else {
+		c.metrics.IncrementReceived(int64(len(respBytes)))
+	}
 
 	if err != nil {
 		return fmt.Errorf("RPC call failed: %w", err)
@@ -204,13 +206,17 @@ func (c *Client) Close() error {
 // Metrics returns the current metrics (thread-safe)
 func (c *Client) Metrics() Metrics {
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	lastStatus := c.lastStatus
+	c.mu.Unlock()
+
+	snapshot := c.metrics.Snapshot()
 	return Metrics{
-		MessagesSent: c.callCount,
-		MessagesRecv: c.callCount - c.errors,
-		BytesSent:    c.bytesSent,
-		BytesRecv:    c.bytesRecv,
-		Errors:       c.errors,
-		StatusCode:   c.lastStatus,
+		CallDuration: snapshot.ConnectionDuration,
+		MessagesSent: snapshot.MessagesSent,
+		MessagesRecv: snapshot.MessagesReceived,
+		BytesSent:    snapshot.BytesSent,
+		BytesRecv:    snapshot.BytesReceived,
+		Errors:       snapshot.Errors,
+		StatusCode:   lastStatus,
 	}
 }

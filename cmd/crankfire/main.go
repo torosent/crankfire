@@ -4,21 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	"github.com/torosent/crankfire/internal/auth"
 	"github.com/torosent/crankfire/internal/config"
 	"github.com/torosent/crankfire/internal/dashboard"
-	"github.com/torosent/crankfire/internal/extractor"
 	"github.com/torosent/crankfire/internal/httpclient"
 	"github.com/torosent/crankfire/internal/metrics"
 	"github.com/torosent/crankfire/internal/output"
@@ -26,27 +22,11 @@ import (
 	"github.com/torosent/crankfire/internal/threshold"
 )
 
-// makeHeaders converts a map[string]string to http.Header
-func makeHeaders(headers map[string]string) http.Header {
-	h := make(http.Header)
-	for k, v := range headers {
-		h.Set(k, v)
-	}
-	return h
-}
-
 const (
-	progressInterval   = time.Second
-	maxLoggedBodyBytes = 1024
-	baseRetryDelay     = 100 * time.Millisecond
-	maxRetryDelay      = 5 * time.Second
+	progressInterval = time.Second
+	baseRetryDelay   = 100 * time.Millisecond
+	maxRetryDelay    = 5 * time.Second
 )
-
-type httpRequester struct {
-	client    *http.Client
-	builder   *httpclient.RequestBuilder
-	collector *metrics.Collector
-}
 
 type stderrFailureLogger struct {
 	mu sync.Mutex
@@ -140,6 +120,11 @@ func run(args []string) error {
 			client:    client,
 			builder:   builder,
 			collector: collector,
+			helper: baseRequesterHelper{
+				collector: collector,
+				auth:      authProvider,
+				feeder:    dataFeeder,
+			},
 		}
 
 		var wrapped runner.Requester = httpReq
@@ -320,145 +305,6 @@ func run(args []string) error {
 		return fmt.Errorf("%d requests failed", result.Errors)
 	}
 	return nil
-}
-
-func (r *httpRequester) Do(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	start := time.Now()
-	builder := r.builder
-	meta := &metrics.RequestMetadata{Protocol: "http"}
-	var tmpl *endpointTemplate
-	if endpoint := endpointFromContext(ctx); endpoint != nil {
-		tmpl = endpoint
-		if endpoint.builder != nil {
-			builder = endpoint.builder
-		}
-		meta.Endpoint = endpoint.name
-	}
-	if builder == nil {
-		err := fmt.Errorf("request builder is not configured")
-		meta = annotateStatus(meta, "http", fallbackStatusCode(err))
-		r.collector.RecordRequest(time.Since(start), err, meta)
-		return err
-	}
-	req, err := builder.Build(ctx)
-	if err != nil {
-		meta = annotateStatus(meta, "http", fallbackStatusCode(err))
-		r.collector.RecordRequest(time.Since(start), err, meta)
-		return err
-	}
-
-	resp, err := r.client.Do(req)
-	latency := time.Since(start)
-	if err != nil {
-		meta = annotateStatus(meta, "http", fallbackStatusCode(err))
-		r.collector.RecordRequest(latency, err, meta)
-		return err
-	}
-	defer resp.Body.Close()
-
-	// Read response body for extraction and error logging (up to 1MB limit)
-	const maxBodySize = 1024 * 1024
-	body, _ := io.ReadAll(io.LimitReader(resp.Body, maxBodySize))
-
-	var resultErr error
-	if resp.StatusCode >= 400 {
-		snippet := body
-		if len(snippet) > maxLoggedBodyBytes {
-			snippet = snippet[:maxLoggedBodyBytes]
-		}
-		resultErr = &runner.HTTPError{
-			StatusCode: resp.StatusCode,
-			Body:       strings.TrimSpace(string(snippet)),
-		}
-		meta = annotateStatus(meta, "http", strconv.Itoa(resp.StatusCode))
-	}
-
-	// Extract values if applicable
-	if tmpl != nil && len(tmpl.extractors) > 0 {
-		shouldExtract := resp.StatusCode < 400
-		if !shouldExtract {
-			// For error responses, check if any extractor has OnError=true
-			for _, ext := range tmpl.extractors {
-				if ext.OnError {
-					shouldExtract = true
-					break
-				}
-			}
-		}
-
-		if shouldExtract {
-			// Filter extractors based on OnError flag for error responses
-			extractorsToUse := tmpl.extractors
-			if resp.StatusCode >= 400 {
-				extractorsToUse = filterExtractorsOnError(tmpl.extractors)
-			}
-
-			if len(extractorsToUse) > 0 {
-				logger := &stderrLogger{}
-				extracted := extractor.ExtractAll(body, extractorsToUse, logger)
-				storeExtractedValues(ctx, extracted)
-			}
-		}
-	}
-
-	if resultErr != nil && meta.StatusCode == "" {
-		meta = annotateStatus(meta, "http", httpStatusCodeFromError(resultErr))
-	}
-	r.collector.RecordRequest(latency, resultErr, meta)
-	return resultErr
-}
-
-// filterExtractorsOnError returns only extractors with OnError=true
-func filterExtractorsOnError(extractors []extractor.Extractor) []extractor.Extractor {
-	result := make([]extractor.Extractor, 0, len(extractors))
-	for _, ext := range extractors {
-		if ext.OnError {
-			result = append(result, ext)
-		}
-	}
-	return result
-}
-
-// storeExtractedValues stores extracted key-value pairs in the variable store from context
-func storeExtractedValues(ctx context.Context, values map[string]string) {
-	if len(values) == 0 {
-		return
-	}
-	store := variableStoreFromContext(ctx)
-	if store == nil {
-		return
-	}
-	for key, value := range values {
-		store.Set(key, value)
-	}
-}
-
-func httpStatusCodeFromError(err error) string {
-	if err == nil {
-		return ""
-	}
-	var httpErr *runner.HTTPError
-	if errors.As(err, &httpErr) && httpErr.StatusCode > 0 {
-		return strconv.Itoa(httpErr.StatusCode)
-	}
-	return fallbackStatusCode(err)
-}
-
-func newHTTPRequestBuilder(cfg *config.Config, provider auth.Provider, feeder httpclient.Feeder) (*httpclient.RequestBuilder, error) {
-	switch {
-	case provider != nil && feeder != nil:
-		return httpclient.NewRequestBuilderWithAuthAndFeeder(cfg, provider, feeder)
-	case provider != nil:
-		return httpclient.NewRequestBuilderWithAuth(cfg, provider)
-	case feeder != nil:
-		return httpclient.NewRequestBuilderWithFeeder(cfg, feeder)
-	default:
-		return httpclient.NewRequestBuilder(cfg)
-	}
 }
 
 func toRunnerArrivalModel(model config.ArrivalModel) runner.ArrivalModel {

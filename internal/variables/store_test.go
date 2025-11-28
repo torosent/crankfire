@@ -1,6 +1,7 @@
 package variables
 
 import (
+	"context"
 	"testing"
 )
 
@@ -121,5 +122,40 @@ func TestMemoryStore_Clear(t *testing.T) {
 	value, ok := store.Get("username")
 	if ok {
 		t.Errorf("expected ok=false after clear, got ok=true with value %q", value)
+	}
+}
+
+func TestContextWithVariableStore(t *testing.T) {
+	store := NewStore()
+	store.Set("key", "value")
+
+	ctx := context.Background()
+	ctxWithStore := NewContext(ctx, store)
+
+	retrieved := FromContext(ctxWithStore)
+	if retrieved == nil {
+		t.Fatalf("FromContext() returned nil")
+	}
+
+	val, ok := retrieved.Get("key")
+	if !ok || val != "value" {
+		t.Errorf("retrieved store has wrong value: got %q, want %q", val, "value")
+	}
+}
+
+func TestVariableStoreFromContext(t *testing.T) {
+	// Test with context without store
+	ctx := context.TODO()
+	got := FromContext(ctx)
+	if got != nil {
+		t.Errorf("FromContext(no store) = %v, want nil", got)
+	}
+
+	// Test with context with store
+	store := NewStore()
+	ctx = NewContext(ctx, store)
+	got = FromContext(ctx)
+	if got != store {
+		t.Errorf("FromContext(with store) returned wrong store")
 	}
 }

@@ -1,14 +1,13 @@
-package main
+package placeholders
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
 	"github.com/torosent/crankfire/internal/variables"
 )
 
-func TestApplyPlaceholders(t *testing.T) {
+func TestApply(t *testing.T) {
 	tests := []struct {
 		name     string
 		template string
@@ -49,15 +48,15 @@ func TestApplyPlaceholders(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := applyPlaceholders(tt.template, tt.record)
+			got := Apply(tt.template, tt.record)
 			if got != tt.want {
-				t.Errorf("applyPlaceholders() = %q, want %q", got, tt.want)
+				t.Errorf("Apply() = %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestApplyPlaceholdersToMap(t *testing.T) {
+func TestApplyToMap(t *testing.T) {
 	tests := []struct {
 		name   string
 		values map[string]string
@@ -102,50 +101,15 @@ func TestApplyPlaceholdersToMap(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := applyPlaceholdersToMap(tt.values, tt.record)
+			got := ApplyToMap(tt.values, tt.record)
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("applyPlaceholdersToMap() = %v, want %v", got, tt.want)
+				t.Errorf("ApplyToMap() = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestContextWithVariableStore(t *testing.T) {
-	store := variables.NewStore()
-	store.Set("key", "value")
-
-	ctx := context.Background()
-	ctxWithStore := variables.NewContext(ctx, store)
-
-	retrieved := variables.FromContext(ctxWithStore)
-	if retrieved == nil {
-		t.Fatalf("variableStoreFromContext() returned nil")
-	}
-
-	val, ok := retrieved.Get("key")
-	if !ok || val != "value" {
-		t.Errorf("retrieved store has wrong value: got %q, want %q", val, "value")
-	}
-}
-
-func TestVariableStoreFromContext(t *testing.T) {
-	// Test with context without store
-	ctx := context.TODO()
-	got := variables.FromContext(ctx)
-	if got != nil {
-		t.Errorf("variableStoreFromContext(no store) = %v, want nil", got)
-	}
-
-	// Test with context with store
-	store := variables.NewStore()
-	ctx = variables.NewContext(ctx, store)
-	got = variables.FromContext(ctx)
-	if got != store {
-		t.Errorf("variableStoreFromContext(with store) returned wrong store")
-	}
-}
-
-func TestApplyPlaceholders_WithVariables(t *testing.T) {
+func TestApply_WithVariables(t *testing.T) {
 	tests := []struct {
 		name     string
 		template string
@@ -185,15 +149,15 @@ func TestApplyPlaceholders_WithVariables(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := applyPlaceholders(tt.template, tt.record, tt.store)
+			got := Apply(tt.template, tt.record, tt.store)
 			if got != tt.want {
-				t.Errorf("applyPlaceholdersWithVariables() = %q, want %q", got, tt.want)
+				t.Errorf("Apply() = %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestApplyPlaceholders_DefaultValue(t *testing.T) {
+func TestApply_DefaultValue(t *testing.T) {
 	tests := []struct {
 		name     string
 		template string
@@ -247,28 +211,28 @@ func TestApplyPlaceholders_DefaultValue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := applyPlaceholders(tt.template, tt.record, tt.store)
+			got := Apply(tt.template, tt.record, tt.store)
 			if got != tt.want {
-				t.Errorf("applyPlaceholdersWithVariables() = %q, want %q", got, tt.want)
+				t.Errorf("Apply() = %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestApplyPlaceholders_EmptyDefault(t *testing.T) {
+func TestApply_EmptyDefault(t *testing.T) {
 	template := "prefix{{value|}}suffix"
 	record := map[string]string{}
 	store := variables.NewStore()
 
-	got := applyPlaceholders(template, record, store)
+	got := Apply(template, record, store)
 	expected := "prefixsuffix"
 
 	if got != expected {
-		t.Errorf("applyPlaceholdersWithVariables() = %q, want %q", got, expected)
+		t.Errorf("Apply() = %q, want %q", got, expected)
 	}
 }
 
-func TestApplyPlaceholders_VariablePriority(t *testing.T) {
+func TestApply_VariablePriority(t *testing.T) {
 	tests := []struct {
 		name     string
 		template string
@@ -308,15 +272,15 @@ func TestApplyPlaceholders_VariablePriority(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := applyPlaceholders(tt.template, tt.record, tt.store)
+			got := Apply(tt.template, tt.record, tt.store)
 			if got != tt.want {
-				t.Errorf("applyPlaceholdersWithVariables() = %q, want %q", got, tt.want)
+				t.Errorf("Apply() = %q, want %q", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestApplyPlaceholdersToMapWithVariables(t *testing.T) {
+func TestApplyToMapWithVariables(t *testing.T) {
 	tests := []struct {
 		name   string
 		values map[string]string
@@ -343,9 +307,9 @@ func TestApplyPlaceholdersToMapWithVariables(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := applyPlaceholdersToMap(tt.values, tt.record, tt.store)
+			got := ApplyToMap(tt.values, tt.record, tt.store)
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("applyPlaceholdersToMapWithVariables() = %v, want %v", got, tt.want)
+				t.Errorf("ApplyToMap() = %v, want %v", got, tt.want)
 			}
 		})
 	}

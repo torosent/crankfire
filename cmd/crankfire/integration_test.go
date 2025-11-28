@@ -372,7 +372,7 @@ func TestIntegration_RequestChaining(t *testing.T) {
 
 	// Create variable store for chaining
 	store := variables.NewStore()
-	ctx := contextWithVariableStore(context.Background(), store)
+	ctx := variables.NewContext(context.Background(), store)
 
 	// Create endpoint with extractor
 	tmpl := &endpointTemplate{
@@ -476,7 +476,7 @@ func TestIntegration_RequestChaining_WithDefaults(t *testing.T) {
 	}
 
 	store := variables.NewStore()
-	ctx := contextWithVariableStore(context.Background(), store)
+	ctx := variables.NewContext(context.Background(), store)
 
 	// Extractor that will fail to find the field
 	tmpl := &endpointTemplate{
@@ -593,7 +593,7 @@ func TestIntegration_RequestChaining_MultiStep(t *testing.T) {
 
 	collector := metrics.NewCollector()
 	store := variables.NewStore()
-	baseCtx := contextWithVariableStore(context.Background(), store)
+	baseCtx := variables.NewContext(context.Background(), store)
 
 	// Request 1: Create order and extract ID
 	cfg1 := &config.Config{

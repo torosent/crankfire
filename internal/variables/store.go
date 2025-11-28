@@ -1,6 +1,10 @@
 // Package variables provides variable storage for holding extracted values per-worker.
 package variables
 
+import (
+	"context"
+)
+
 // Store defines the interface for variable storage.
 type Store interface {
 	// Set stores a variable with the given key and value.
@@ -76,4 +80,28 @@ func (m *MemoryStore) Merge(record map[string]string) map[string]string {
 // Clear removes all stored variables.
 func (m *MemoryStore) Clear() {
 	m.variables = make(map[string]string)
+}
+
+type contextKey struct{}
+
+var storeKey = contextKey{}
+
+// FromContext retrieves the variable store from the context.
+// Returns nil if not found.
+func FromContext(ctx context.Context) Store {
+	if ctx == nil {
+		return nil
+	}
+	if s, ok := ctx.Value(storeKey).(Store); ok {
+		return s
+	}
+	return nil
+}
+
+// NewContext returns a new context with the variable store attached.
+func NewContext(ctx context.Context, store Store) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, storeKey, store)
 }

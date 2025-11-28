@@ -74,11 +74,12 @@ func NewOAuth2ClientCredentialsProvider(
 // Token retrieves a valid OAuth2 access token, using cache when available.
 func (p *OAuth2ClientCredentialsProvider) Token(ctx context.Context) (string, error) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
 	// Check if cached token is still valid
 	if p.cachedToken != "" && time.Now().Before(p.tokenExpiry) {
-		return p.cachedToken, nil
+		token := p.cachedToken
+		p.mu.Unlock()
+		return token, nil
 	}
 
 	// If another goroutine is already fetching, wait for it
@@ -86,7 +87,9 @@ func (p *OAuth2ClientCredentialsProvider) Token(ctx context.Context) (string, er
 		p.fetchCond.Wait()
 		// After waking up, check if we now have a valid token
 		if p.cachedToken != "" && time.Now().Before(p.tokenExpiry) {
-			return p.cachedToken, nil
+			token := p.cachedToken
+			p.mu.Unlock()
+			return token, nil
 		}
 	}
 
@@ -102,14 +105,17 @@ func (p *OAuth2ClientCredentialsProvider) Token(ctx context.Context) (string, er
 	p.fetchCond.Broadcast()
 
 	if err != nil {
+		p.mu.Unlock()
 		return "", err
 	}
 
 	// Cache the token
 	p.cachedToken = token
 	p.tokenExpiry = time.Now().Add(time.Duration(expiresIn)*time.Second - p.refreshBeforeExpiry)
+	cachedToken := p.cachedToken
+	p.mu.Unlock()
 
-	return p.cachedToken, nil
+	return cachedToken, nil
 }
 
 func (p *OAuth2ClientCredentialsProvider) fetchToken(ctx context.Context) (string, int, error) {
@@ -195,11 +201,12 @@ func NewOAuth2ResourceOwnerProvider(
 // Token retrieves a valid OAuth2 access token, using cache when available.
 func (p *OAuth2ResourceOwnerProvider) Token(ctx context.Context) (string, error) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
 	// Check if cached token is still valid
 	if p.cachedToken != "" && time.Now().Before(p.tokenExpiry) {
-		return p.cachedToken, nil
+		token := p.cachedToken
+		p.mu.Unlock()
+		return token, nil
 	}
 
 	// If another goroutine is already fetching, wait for it
@@ -207,7 +214,9 @@ func (p *OAuth2ResourceOwnerProvider) Token(ctx context.Context) (string, error)
 		p.fetchCond.Wait()
 		// After waking up, check if we now have a valid token
 		if p.cachedToken != "" && time.Now().Before(p.tokenExpiry) {
-			return p.cachedToken, nil
+			token := p.cachedToken
+			p.mu.Unlock()
+			return token, nil
 		}
 	}
 
@@ -223,14 +232,17 @@ func (p *OAuth2ResourceOwnerProvider) Token(ctx context.Context) (string, error)
 	p.fetchCond.Broadcast()
 
 	if err != nil {
+		p.mu.Unlock()
 		return "", err
 	}
 
 	// Cache the token
 	p.cachedToken = token
 	p.tokenExpiry = time.Now().Add(time.Duration(expiresIn)*time.Second - p.refreshBeforeExpiry)
+	cachedToken := p.cachedToken
+	p.mu.Unlock()
 
-	return p.cachedToken, nil
+	return cachedToken, nil
 }
 
 func (p *OAuth2ResourceOwnerProvider) fetchToken(ctx context.Context) (string, int, error) {

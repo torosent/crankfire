@@ -73,6 +73,7 @@ func (r *Runner) Run(ctx context.Context) Result {
 			select {
 			case permits <- struct{}{}:
 			case <-ctx.Done():
+				atomic.AddInt64(&total, -1)
 				return
 			}
 		}

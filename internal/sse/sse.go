@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/torosent/crankfire/internal/clientmetrics"
 )
 
 // Event represents a Server-Sent Event.
@@ -37,16 +39,14 @@ type Metrics struct {
 
 // Client represents an SSE client connection.
 type Client struct {
-	url         string
-	headers     http.Header
-	httpClient  *http.Client
-	resp        *http.Response
-	reader      *bufio.Reader
-	mu          sync.Mutex
-	connectTime time.Time
-	eventsRecv  int64
-	bytesRecv   int64
-	errors      int64
+	url        string
+	headers    http.Header
+	httpClient *http.Client
+	resp       *http.Response
+	reader     *bufio.Reader
+	mu         sync.Mutex
+	metrics    *clientmetrics.ClientMetrics
+	eventsRecv int64 // SSE-specific: count of complete events (not lines)
 }
 
 // Config configures the SSE client behavior.
@@ -68,6 +68,7 @@ func NewClient(cfg Config) *Client {
 		httpClient: &http.Client{
 			Timeout: cfg.Timeout,
 		},
+		metrics: clientmetrics.New(),
 	}
 }
 
@@ -82,7 +83,7 @@ func (c *Client) Connect(ctx context.Context) error {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
 	if err != nil {
-		c.errors++
+		c.metrics.IncrementErrors()
 		return fmt.Errorf("create request: %w", err)
 	}
 
@@ -100,19 +101,19 @@ func (c *Client) Connect(ctx context.Context) error {
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		c.errors++
+		c.metrics.IncrementErrors()
 		return fmt.Errorf("http request: %w", err)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		c.errors++
+		c.metrics.IncrementErrors()
 		resp.Body.Close()
 		return &StatusError{Code: resp.StatusCode}
 	}
 
 	c.resp = resp
 	c.reader = bufio.NewReader(resp.Body)
-	c.connectTime = time.Now()
+	c.metrics.MarkConnected()
 
 	return nil
 }
@@ -140,9 +141,7 @@ func (c *Client) ReadEvent(ctx context.Context) (Event, error) {
 
 		line, err := reader.ReadString('\n')
 		if err != nil {
-			c.mu.Lock()
-			c.errors++
-			c.mu.Unlock()
+			c.metrics.IncrementErrors()
 			if err == io.EOF {
 
 				return Event{}, fmt.Errorf("connection closed")
@@ -150,9 +149,7 @@ func (c *Client) ReadEvent(ctx context.Context) (Event, error) {
 			return Event{}, fmt.Errorf("read line: %w", err)
 		}
 
-		c.mu.Lock()
-		c.bytesRecv += int64(len(line))
-		c.mu.Unlock()
+		c.metrics.IncrementReceived(int64(len(line)))
 
 		line = strings.TrimRight(line, "\r\n")
 
@@ -218,17 +215,14 @@ func (c *Client) Close() error {
 // Metrics returns the current metrics snapshot.
 func (c *Client) Metrics() Metrics {
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	eventsRecv := c.eventsRecv
+	c.mu.Unlock()
 
-	duration := time.Duration(0)
-	if !c.connectTime.IsZero() {
-		duration = time.Since(c.connectTime)
-	}
-
+	snapshot := c.metrics.Snapshot()
 	return Metrics{
-		ConnectionDuration: duration,
-		EventsReceived:     c.eventsRecv,
-		BytesReceived:      c.bytesRecv,
-		Errors:             c.errors,
+		ConnectionDuration: snapshot.ConnectionDuration,
+		EventsReceived:     eventsRecv, // Use SSE-specific event counter
+		BytesReceived:      snapshot.BytesReceived,
+		Errors:             snapshot.Errors,
 	}
 }
