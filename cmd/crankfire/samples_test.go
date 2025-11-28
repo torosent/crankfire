@@ -21,6 +21,7 @@ func TestSampleConfigs_CanParse(t *testing.T) {
 		"websocket-sample.yml",
 		"sse-sample.json",
 		"grpc-sample.yml",
+		"chaining-sample.yml",
 	}
 
 	for _, sample := range samples {

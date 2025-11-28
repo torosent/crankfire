@@ -1,12 +1,19 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/torosent/crankfire/internal/config"
+	"github.com/torosent/crankfire/internal/extractor"
+	"github.com/torosent/crankfire/internal/httpclient"
+	"github.com/torosent/crankfire/internal/metrics"
 	"github.com/torosent/crankfire/internal/runner"
+	"github.com/torosent/crankfire/internal/variables"
 )
 
 func TestMakeHeaders(t *testing.T) {
@@ -95,4 +102,354 @@ func TestToRunnerLoadSteps(t *testing.T) {
 	if got[0].RPS != 10 {
 		t.Errorf("RPS = %d, want 10", got[0].RPS)
 	}
+}
+
+func TestHTTPRequester_ExtractsJSONPath(t *testing.T) {
+	// Test extracting a JSON path from a successful response
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"id": 123, "name": "Alice"}`))
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		TargetURL: server.URL,
+		Method:    http.MethodGet,
+	}
+
+	builder, err := createTestRequestBuilder(cfg)
+	if err != nil {
+		t.Fatalf("failed to create request builder: %v", err)
+	}
+
+	collector := metrics.NewCollector()
+	requester := &httpRequester{
+		client:    http.DefaultClient,
+		builder:   builder,
+		collector: collector,
+	}
+
+	// Create a variable store and attach to context
+	store := variables.NewStore()
+	ctx := contextWithVariableStore(context.Background(), store)
+
+	// Create endpoint template with extractor
+	tmpl := &endpointTemplate{
+		name:    "test",
+		weight:  1,
+		builder: builder,
+		extractors: []extractor.Extractor{
+			{
+				JSONPath: "id",
+				Variable: "user_id",
+			},
+		},
+	}
+	ctx = context.WithValue(ctx, endpointContextKey, tmpl)
+
+	err = requester.Do(ctx)
+	if err != nil {
+		t.Fatalf("Do() returned error: %v", err)
+	}
+
+	// Check that the value was extracted and stored
+	value, ok := store.Get("user_id")
+	if !ok {
+		t.Fatal("variable 'user_id' not found in store")
+	}
+	if value != "123" {
+		t.Errorf("user_id = %q, want 123", value)
+	}
+}
+
+func TestHTTPRequester_ExtractsRegex(t *testing.T) {
+	// Test extracting using regex from a successful response
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`Response: ID=789, Status=OK`))
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		TargetURL: server.URL,
+		Method:    http.MethodGet,
+	}
+
+	builder, err := createTestRequestBuilder(cfg)
+	if err != nil {
+		t.Fatalf("failed to create request builder: %v", err)
+	}
+
+	collector := metrics.NewCollector()
+	requester := &httpRequester{
+		client:    http.DefaultClient,
+		builder:   builder,
+		collector: collector,
+	}
+
+	store := variables.NewStore()
+	ctx := contextWithVariableStore(context.Background(), store)
+
+	tmpl := &endpointTemplate{
+		name:    "test",
+		weight:  1,
+		builder: builder,
+		extractors: []extractor.Extractor{
+			{
+				Regex:    `ID=(\d+)`,
+				Variable: "response_id",
+			},
+		},
+	}
+	ctx = context.WithValue(ctx, endpointContextKey, tmpl)
+
+	err = requester.Do(ctx)
+	if err != nil {
+		t.Fatalf("Do() returned error: %v", err)
+	}
+
+	value, ok := store.Get("response_id")
+	if !ok {
+		t.Fatal("variable 'response_id' not found in store")
+	}
+	if value != "789" {
+		t.Errorf("response_id = %q, want 789", value)
+	}
+}
+
+func TestHTTPRequester_ExtractorChaining(t *testing.T) {
+	// Test that extracted values can be used in subsequent requests
+	// First request extracts an ID from JSON
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"session_id": "sess-12345"}`))
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		TargetURL: server.URL,
+		Method:    http.MethodGet,
+	}
+
+	builder, err := createTestRequestBuilder(cfg)
+	if err != nil {
+		t.Fatalf("failed to create request builder: %v", err)
+	}
+
+	collector := metrics.NewCollector()
+	requester := &httpRequester{
+		client:    http.DefaultClient,
+		builder:   builder,
+		collector: collector,
+	}
+
+	store := variables.NewStore()
+	ctx := contextWithVariableStore(context.Background(), store)
+
+	tmpl := &endpointTemplate{
+		name:    "test",
+		weight:  1,
+		builder: builder,
+		extractors: []extractor.Extractor{
+			{
+				JSONPath: "session_id",
+				Variable: "sid",
+			},
+		},
+	}
+	ctx = context.WithValue(ctx, endpointContextKey, tmpl)
+
+	err = requester.Do(ctx)
+	if err != nil {
+		t.Fatalf("Do() returned error: %v", err)
+	}
+
+	// Verify the extracted value
+	value, ok := store.Get("sid")
+	if !ok {
+		t.Fatal("variable 'sid' not found in store")
+	}
+	if value != "sess-12345" {
+		t.Errorf("sid = %q, want sess-12345", value)
+	}
+}
+
+func TestHTTPRequester_ExtractorNoMatch_Continues(t *testing.T) {
+	// Test that missing extractors don't fail the request
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"id": 123}`))
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		TargetURL: server.URL,
+		Method:    http.MethodGet,
+	}
+
+	builder, err := createTestRequestBuilder(cfg)
+	if err != nil {
+		t.Fatalf("failed to create request builder: %v", err)
+	}
+
+	collector := metrics.NewCollector()
+	requester := &httpRequester{
+		client:    http.DefaultClient,
+		builder:   builder,
+		collector: collector,
+	}
+
+	store := variables.NewStore()
+	ctx := contextWithVariableStore(context.Background(), store)
+
+	// Extractor looking for a missing field
+	tmpl := &endpointTemplate{
+		name:    "test",
+		weight:  1,
+		builder: builder,
+		extractors: []extractor.Extractor{
+			{
+				JSONPath: "missing_field",
+				Variable: "result",
+			},
+		},
+	}
+	ctx = context.WithValue(ctx, endpointContextKey, tmpl)
+
+	err = requester.Do(ctx)
+	if err != nil {
+		t.Fatalf("Do() returned error: %v", err)
+	}
+
+	// Value should be empty but variable should exist
+	value, ok := store.Get("result")
+	if !ok {
+		t.Fatal("variable 'result' not found in store")
+	}
+	if value != "" {
+		t.Errorf("result = %q, want empty string", value)
+	}
+}
+
+func TestHTTPRequester_ExtractOnError_WhenEnabled(t *testing.T) {
+	// Test extraction from error response when OnError=true
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error_code": "INVALID_REQUEST"}`))
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		TargetURL: server.URL,
+		Method:    http.MethodGet,
+	}
+
+	builder, err := createTestRequestBuilder(cfg)
+	if err != nil {
+		t.Fatalf("failed to create request builder: %v", err)
+	}
+
+	collector := metrics.NewCollector()
+	requester := &httpRequester{
+		client:    http.DefaultClient,
+		builder:   builder,
+		collector: collector,
+	}
+
+	store := variables.NewStore()
+	ctx := contextWithVariableStore(context.Background(), store)
+
+	// Extractor with OnError=true
+	tmpl := &endpointTemplate{
+		name:    "test",
+		weight:  1,
+		builder: builder,
+		extractors: []extractor.Extractor{
+			{
+				JSONPath: "error_code",
+				Variable: "err_code",
+				OnError:  true,
+			},
+		},
+	}
+	ctx = context.WithValue(ctx, endpointContextKey, tmpl)
+
+	err = requester.Do(ctx)
+	if err == nil {
+		t.Fatal("expected error for 400 status, got nil")
+	}
+
+	// Value should still be extracted
+	value, ok := store.Get("err_code")
+	if !ok {
+		t.Fatal("variable 'err_code' not found in store")
+	}
+	if value != "INVALID_REQUEST" {
+		t.Errorf("err_code = %q, want INVALID_REQUEST", value)
+	}
+}
+
+func TestHTTPRequester_NoExtractOnError_WhenDisabled(t *testing.T) {
+	// Test that extraction is skipped from error response when OnError=false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error_code": "INVALID_REQUEST"}`))
+	}))
+	defer server.Close()
+
+	cfg := &config.Config{
+		TargetURL: server.URL,
+		Method:    http.MethodGet,
+	}
+
+	builder, err := createTestRequestBuilder(cfg)
+	if err != nil {
+		t.Fatalf("failed to create request builder: %v", err)
+	}
+
+	collector := metrics.NewCollector()
+	requester := &httpRequester{
+		client:    http.DefaultClient,
+		builder:   builder,
+		collector: collector,
+	}
+
+	store := variables.NewStore()
+	ctx := contextWithVariableStore(context.Background(), store)
+
+	// Extractor with OnError=false (default)
+	tmpl := &endpointTemplate{
+		name:    "test",
+		weight:  1,
+		builder: builder,
+		extractors: []extractor.Extractor{
+			{
+				JSONPath: "error_code",
+				Variable: "err_code",
+				OnError:  false,
+			},
+		},
+	}
+	ctx = context.WithValue(ctx, endpointContextKey, tmpl)
+
+	err = requester.Do(ctx)
+	if err == nil {
+		t.Fatal("expected error for 400 status, got nil")
+	}
+
+	// Value should NOT be extracted
+	_, ok := store.Get("err_code")
+	if ok {
+		t.Fatal("variable 'err_code' should not exist in store for error response with OnError=false")
+	}
+}
+
+// createTestRequestBuilder is a helper to create a RequestBuilder for testing
+func createTestRequestBuilder(cfg *config.Config) (*httpclient.RequestBuilder, error) {
+	return httpclient.NewRequestBuilder(cfg)
 }

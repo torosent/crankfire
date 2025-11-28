@@ -81,15 +81,30 @@ type ArrivalConfig struct {
 	Model ArrivalModel `mapstructure:"model"`
 }
 
+type Extractor struct {
+	// JSONPath is a JSON path expression (e.g., "$.user.id", "user.id")
+	JSONPath string `mapstructure:"jsonpath" yaml:"jsonpath"`
+
+	// Regex is a regex pattern with optional capture group
+	Regex string `mapstructure:"regex" yaml:"regex"`
+
+	// Variable is the variable name to store the extracted value
+	Variable string `mapstructure:"var" yaml:"var"`
+
+	// OnError, if true, extracts even from error responses (4xx/5xx)
+	OnError bool `mapstructure:"on_error" yaml:"on_error"`
+}
+
 type Endpoint struct {
-	Name     string            `mapstructure:"name"`
-	Weight   int               `mapstructure:"weight"`
-	Method   string            `mapstructure:"method"`
-	URL      string            `mapstructure:"url"`
-	Path     string            `mapstructure:"path"`
-	Headers  map[string]string `mapstructure:"headers"`
-	Body     string            `mapstructure:"body"`
-	BodyFile string            `mapstructure:"body_file"`
+	Name       string            `mapstructure:"name"`
+	Weight     int               `mapstructure:"weight"`
+	Method     string            `mapstructure:"method"`
+	URL        string            `mapstructure:"url"`
+	Path       string            `mapstructure:"path"`
+	Headers    map[string]string `mapstructure:"headers"`
+	Body       string            `mapstructure:"body"`
+	BodyFile   string            `mapstructure:"body_file"`
+	Extractors []Extractor       `mapstructure:"extractors" yaml:"extractors"`
 }
 
 type FeederConfig struct {
@@ -348,8 +363,57 @@ func validateEndpoints(endpoints []Endpoint) []string {
 				seenNames[key] = idx
 			}
 		}
+
+		// Validate extractors
+		extractorIssues := validateExtractors(idx, ep.Extractors)
+		if len(extractorIssues) > 0 {
+			issues = append(issues, extractorIssues...)
+		}
 	}
 	return issues
+}
+
+func validateExtractors(endpointIdx int, extractors []Extractor) []string {
+	var issues []string
+	for idx, ext := range extractors {
+		// Check that exactly one of JSONPath or Regex is provided
+		hasJSONPath := strings.TrimSpace(ext.JSONPath) != ""
+		hasRegex := strings.TrimSpace(ext.Regex) != ""
+
+		if !hasJSONPath && !hasRegex {
+			issues = append(issues, fmt.Sprintf("endpoints[%d].extractors[%d]: either jsonpath or regex is required", endpointIdx, idx))
+		}
+		if hasJSONPath && hasRegex {
+			issues = append(issues, fmt.Sprintf("endpoints[%d].extractors[%d]: either jsonpath or regex must be specified, not both", endpointIdx, idx))
+		}
+
+		// Check that Variable is provided and valid
+		varName := strings.TrimSpace(ext.Variable)
+		if varName == "" {
+			issues = append(issues, fmt.Sprintf("endpoints[%d].extractors[%d]: var is required", endpointIdx, idx))
+		} else if !isValidIdentifier(varName) {
+			issues = append(issues, fmt.Sprintf("endpoints[%d].extractors[%d]: var must be a valid identifier (letters, numbers, underscores; cannot start with number)", endpointIdx, idx))
+		}
+	}
+	return issues
+}
+
+func isValidIdentifier(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	// Must start with letter or underscore
+	if !((s[0] >= 'a' && s[0] <= 'z') || (s[0] >= 'A' && s[0] <= 'Z') || s[0] == '_') {
+		return false
+	}
+	// Rest can contain letters, numbers, underscores
+	for i := 1; i < len(s); i++ {
+		c := s[i]
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+			return false
+		}
+	}
+	return true
 }
 
 func validateAuthConfig(auth AuthConfig) []string {

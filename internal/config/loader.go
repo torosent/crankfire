@@ -892,7 +892,70 @@ func buildEndpoint(settings map[string]interface{}) (Endpoint, error) {
 			}
 		}
 	}
+	if raw, ok := lookupSetting(settings, "extractors"); ok {
+		extractors, err := parseExtractors(raw)
+		if err != nil {
+			return Endpoint{}, fmt.Errorf("extractors: %w", err)
+		}
+		endpoint.Extractors = extractors
+	}
 	return endpoint, nil
+}
+
+func parseExtractors(value interface{}) ([]Extractor, error) {
+	if value == nil {
+		return nil, nil
+	}
+	items, err := toInterfaceSlice(value)
+	if err != nil {
+		return nil, err
+	}
+	extractors := make([]Extractor, 0, len(items))
+	for idx, item := range items {
+		entry, err := toStringKeyMap(item)
+		if err != nil {
+			return nil, fmt.Errorf("index %d: %w", idx, err)
+		}
+		extractor, err := buildExtractor(entry)
+		if err != nil {
+			return nil, fmt.Errorf("index %d: %w", idx, err)
+		}
+		extractors = append(extractors, extractor)
+	}
+	return extractors, nil
+}
+
+func buildExtractor(settings map[string]interface{}) (Extractor, error) {
+	var extractor Extractor
+	if raw, ok := lookupSetting(settings, "jsonpath"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return Extractor{}, fmt.Errorf("jsonpath: %w", err)
+		}
+		extractor.JSONPath = strings.TrimSpace(val)
+	}
+	if raw, ok := lookupSetting(settings, "regex"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return Extractor{}, fmt.Errorf("regex: %w", err)
+		}
+		extractor.Regex = strings.TrimSpace(val)
+	}
+	if raw, ok := lookupSetting(settings, "var"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return Extractor{}, fmt.Errorf("var: %w", err)
+		}
+		extractor.Variable = strings.TrimSpace(val)
+	}
+	if raw, ok := lookupSetting(settings, "onerror", "on_error", "on-error"); ok {
+		val, err := asBool(raw)
+		if err != nil {
+			return Extractor{}, fmt.Errorf("on_error: %w", err)
+		}
+		extractor.OnError = val
+	}
+	return extractor, nil
 }
 
 func toInterfaceSlice(value interface{}) ([]interface{}, error) {

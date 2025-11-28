@@ -11,14 +11,17 @@ import (
 	"time"
 
 	"github.com/torosent/crankfire/internal/config"
+	"github.com/torosent/crankfire/internal/extractor"
 	"github.com/torosent/crankfire/internal/httpclient"
 	"github.com/torosent/crankfire/internal/runner"
+	"github.com/torosent/crankfire/internal/variables"
 )
 
 type endpointTemplate struct {
-	name    string
-	weight  int
-	builder *httpclient.RequestBuilder
+	name       string
+	weight     int
+	builder    *httpclient.RequestBuilder
+	extractors []extractor.Extractor
 }
 
 type endpointSelector struct {
@@ -111,10 +114,14 @@ func buildEndpointTemplate(cfg *config.Config, ep config.Endpoint) (*endpointTem
 		name = target
 	}
 
+	// Convert config.Extractor to extractor.Extractor
+	extractors := convertExtractors(ep.Extractors)
+
 	return &endpointTemplate{
-		name:    name,
-		weight:  weight,
-		builder: builder,
+		name:       name,
+		weight:     weight,
+		builder:    builder,
+		extractors: extractors,
 	}, nil
 }
 
@@ -156,6 +163,23 @@ func mergeHeaders(base map[string]string, overrides map[string]string) map[strin
 		merged[key] = v
 	}
 	return merged
+}
+
+// convertExtractors converts config.Extractor to extractor.Extractor
+func convertExtractors(configExtractors []config.Extractor) []extractor.Extractor {
+	if len(configExtractors) == 0 {
+		return nil
+	}
+	result := make([]extractor.Extractor, len(configExtractors))
+	for i, ce := range configExtractors {
+		result[i] = extractor.Extractor{
+			JSONPath: ce.JSONPath,
+			Regex:    ce.Regex,
+			Variable: ce.Variable,
+			OnError:  ce.OnError,
+		}
+	}
+	return result
 }
 
 func (s *endpointSelector) pickTemplate() *endpointTemplate {
@@ -200,6 +224,13 @@ func (e *endpointSelectionRequester) Do(ctx context.Context) error {
 	if tmpl := endpointFromContext(ctx); tmpl != nil {
 		return e.next.Do(ctx)
 	}
+
+	// Create a variable store for this worker if not already present
+	if variableStoreFromContext(ctx) == nil {
+		store := variables.NewStore()
+		ctx = contextWithVariableStore(ctx, store)
+	}
+
 	tmpl := e.selector.pickTemplate()
 	if tmpl == nil {
 		return e.next.Do(ctx)
@@ -218,6 +249,30 @@ func endpointFromContext(ctx context.Context) *endpointTemplate {
 	}
 	if tmpl, ok := ctx.Value(endpointContextKey).(*endpointTemplate); ok {
 		return tmpl
+	}
+	return nil
+}
+
+type variableStoreCtxKey struct{}
+
+var variableStoreContextKey = variableStoreCtxKey{}
+
+// contextWithVariableStore returns a new context with the variable store attached.
+func contextWithVariableStore(ctx context.Context, store variables.Store) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, variableStoreContextKey, store)
+}
+
+// variableStoreFromContext retrieves the variable store from the context.
+// Returns nil if not found.
+func variableStoreFromContext(ctx context.Context) variables.Store {
+	if ctx == nil {
+		return nil
+	}
+	if store, ok := ctx.Value(variableStoreContextKey).(variables.Store); ok {
+		return store
 	}
 	return nil
 }

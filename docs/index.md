@@ -45,6 +45,7 @@ If you have ever stitched together multiple tools or scripts to run distributed 
 - [HAR Import](har-import.md)
 - [Authentication](authentication.md)
 - [Data Feeders](feeders.md)
+- [Request Chaining](request-chaining.md)
 - [Protocols](protocols.md) (HTTP, WebSocket, SSE, gRPC)
 - [Thresholds & Assertions](thresholds.md)
 - [Thresholds Quick Reference](thresholds-quick-reference.md)
