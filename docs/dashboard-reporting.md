@@ -89,4 +89,4 @@ if (( $(echo "$p99 > 200" | bc -l) )); then
 fi
 ```
 
-For a complete GitHub Actions example, see [Usage Examples](usage.md).
+For a complete GitHub Actions example, see [Usage Examples](USAGE.md).

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -75,6 +76,10 @@ func (Loader) Load(args []string) (*Config, error) {
 		cfg.Headers = map[string]string{}
 	}
 
+	if err := loadHAREndpoints(cfg); err != nil {
+		return nil, err
+	}
+
 	return cfg, nil
 }
 
@@ -131,6 +136,9 @@ func configureFlags(flags *pflag.FlagSet) {
 	flags.Bool("grpc-tls", false, "Use TLS for gRPC connection")
 	flags.Bool("grpc-insecure", false, "Skip TLS verification for gRPC")
 	flags.StringSlice("threshold", nil, "Performance thresholds (repeatable, e.g., 'http_req_duration:p95 < 500')")
+
+	flags.String("har", "", "Path to HAR file to import as endpoints")
+	flags.String("har-filter", "", "Filter HAR entries (e.g., 'host:example.com' or 'method:GET,POST')")
 }
 
 func displayHelp(cmd *cobra.Command) {
@@ -361,6 +369,22 @@ func applyConfigSettings(cfg *Config, settings map[string]interface{}) error {
 			return fmt.Errorf("thresholds: %w", err)
 		}
 		cfg.Thresholds = thresholds
+	}
+
+	if raw, ok := lookupSetting(settings, "harfile", "har_file", "har-file"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return fmt.Errorf("harFile: %w", err)
+		}
+		cfg.HARFile = strings.TrimSpace(val)
+	}
+
+	if raw, ok := lookupSetting(settings, "harfilter", "har_filter", "har-filter"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return fmt.Errorf("harFilter: %w", err)
+		}
+		cfg.HARFilter = strings.TrimSpace(val)
 	}
 
 	return nil
@@ -622,6 +646,21 @@ func applyFlagOverrides(cfg *Config, fs *pflag.FlagSet) error {
 			return err
 		}
 		cfg.Thresholds = val
+	}
+
+	if fs.Changed("har") {
+		val, err := fs.GetString("har")
+		if err != nil {
+			return err
+		}
+		cfg.HARFile = strings.TrimSpace(val)
+	}
+	if fs.Changed("har-filter") {
+		val, err := fs.GetString("har-filter")
+		if err != nil {
+			return err
+		}
+		cfg.HARFilter = strings.TrimSpace(val)
 	}
 
 	return nil
@@ -1358,4 +1397,72 @@ func asStringSlice(value interface{}) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("unsupported string slice type %T", value)
 	}
+}
+
+// parseHARFilter parses a HAR filter string and returns a map representation.
+// Format examples:
+//   - "host:example.com"
+//   - "host:api.example.com,cdn.example.com"
+//   - "method:GET"
+//   - "method:GET,POST"
+//   - "host:example.com;method:GET,POST"
+func parseHARFilter(filter string) map[string][]string {
+	opts := make(map[string][]string)
+
+	if filter == "" {
+		return opts
+	}
+
+	parts := strings.Split(filter, ";")
+	for _, part := range parts {
+		kv := strings.SplitN(part, ":", 2)
+		if len(kv) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(strings.ToLower(kv[0]))
+		value := strings.TrimSpace(kv[1])
+
+		switch key {
+		case "host":
+			hosts := strings.Split(value, ",")
+			for i := range hosts {
+				hosts[i] = strings.TrimSpace(hosts[i])
+			}
+			opts["hosts"] = hosts
+		case "method":
+			methods := strings.Split(value, ",")
+			for i := range methods {
+				methods[i] = strings.TrimSpace(methods[i])
+			}
+			opts["methods"] = methods
+		}
+	}
+
+	return opts
+}
+
+// loadHAREndpoints validates that the HAR file exists and is readable JSON.
+// The actual HAR conversion to endpoints happens separately via LoadHAREndpointsFromConfig function
+// which is called from the cmd layer to avoid circular import issues.
+func loadHAREndpoints(cfg *Config) error {
+	if strings.TrimSpace(cfg.HARFile) == "" {
+		return nil
+	}
+
+	// Verify the file exists and is readable
+	data, err := os.ReadFile(cfg.HARFile)
+	if err != nil {
+		return fmt.Errorf("failed to open HAR file: %w", err)
+	}
+
+	// Validate it's valid JSON
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("failed to parse HAR JSON: %w", err)
+	}
+
+	// Print security warning
+	fmt.Fprintln(os.Stderr, "WARNING: HAR file may contain sensitive data (cookies, auth tokens). Review endpoints before use in production.")
+
+	return nil
 }

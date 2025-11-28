@@ -76,6 +76,11 @@ func run(args []string) error {
 		return err
 	}
 
+	// Load HAR endpoints if specified
+	if err := loadHAREndpoints(cfg); err != nil {
+		return err
+	}
+
 	authProvider, err := buildAuthProvider(cfg)
 	if err != nil {
 		return err

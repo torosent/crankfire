@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -264,4 +266,285 @@ func TestParseEndpoints(t *testing.T) {
 	if e.Weight != 5 {
 		t.Errorf("Weight = %d, want 5", e.Weight)
 	}
+}
+
+func TestLoad_WithHARFile(t *testing.T) {
+	// Create a test HAR file
+	harData := `{
+		"log": {
+			"version": "1.2",
+			"creator": {"name": "test", "version": "1.0"},
+			"entries": [
+				{
+					"request": {
+						"method": "GET",
+						"url": "http://example.com/api/users",
+						"headers": [
+							{"name": "Content-Type", "value": "application/json"}
+						]
+					},
+					"response": {"status": 200, "headers": [], "content": {}}
+				}
+			]
+		}
+	}`
+
+	tmpFile, err := os.CreateTemp("", "test-*.har")
+	if err != nil {
+		t.Fatalf("Failed to create temp HAR file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(harData); err != nil {
+		t.Fatalf("Failed to write HAR data: %v", err)
+	}
+	tmpFile.Close()
+
+	loader := NewLoader()
+	args := []string{
+		"--target=http://example.com",
+		"--har=" + tmpFile.Name(),
+	}
+
+	cfg, err := loader.Load(args)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// The loader should store the HAR file path
+	if cfg.HARFile != tmpFile.Name() {
+		t.Errorf("HARFile = %q, want %q", cfg.HARFile, tmpFile.Name())
+	}
+
+	// The actual conversion happens in the cmd layer, not in loader
+	// This test just verifies the file path is stored correctly
+}
+
+func TestLoad_HARWithFilter(t *testing.T) {
+	harData := `{
+		"log": {
+			"version": "1.2",
+			"creator": {"name": "test", "version": "1.0"},
+			"entries": [
+				{
+					"request": {
+						"method": "GET",
+						"url": "http://api.example.com/users",
+						"headers": []
+					},
+					"response": {"status": 200, "headers": [], "content": {}}
+				},
+				{
+					"request": {
+						"method": "POST",
+						"url": "http://api.example.com/create",
+						"headers": []
+					},
+					"response": {"status": 201, "headers": [], "content": {}}
+				},
+				{
+					"request": {
+						"method": "GET",
+						"url": "http://other.com/data",
+						"headers": []
+					},
+					"response": {"status": 200, "headers": [], "content": {}}
+				}
+			]
+		}
+	}`
+
+	tmpFile, err := os.CreateTemp("", "test-*.har")
+	if err != nil {
+		t.Fatalf("Failed to create temp HAR file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(harData); err != nil {
+		t.Fatalf("Failed to write HAR data: %v", err)
+	}
+	tmpFile.Close()
+
+	loader := NewLoader()
+	args := []string{
+		"--target=http://example.com",
+		"--har=" + tmpFile.Name(),
+		"--har-filter=host:api.example.com;method:GET",
+	}
+
+	cfg, err := loader.Load(args)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// The loader should store both HAR file and filter
+	if cfg.HARFile != tmpFile.Name() {
+		t.Errorf("HARFile = %q, want %q", cfg.HARFile, tmpFile.Name())
+	}
+	if cfg.HARFilter != "host:api.example.com;method:GET" {
+		t.Errorf("HARFilter = %q, want host:api.example.com;method:GET", cfg.HARFilter)
+	}
+}
+
+func TestLoad_HARMergeWithConfig(t *testing.T) {
+	harData := `{
+		"log": {
+			"version": "1.2",
+			"creator": {"name": "test", "version": "1.0"},
+			"entries": [
+				{
+					"request": {
+						"method": "GET",
+						"url": "http://example.com/api",
+						"headers": []
+					},
+					"response": {"status": 200, "headers": [], "content": {}}
+				}
+			]
+		}
+	}`
+
+	tmpFile, err := os.CreateTemp("", "test-*.har")
+	if err != nil {
+		t.Fatalf("Failed to create temp HAR file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(harData); err != nil {
+		t.Fatalf("Failed to write HAR data: %v", err)
+	}
+	tmpFile.Close()
+
+	loader := NewLoader()
+	args := []string{
+		"--target=http://example.com",
+		"--har=" + tmpFile.Name(),
+	}
+
+	cfg, err := loader.Load(args)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// The loader should store the HAR file path
+	// The actual merging with endpoints happens in the cmd layer
+	if cfg.HARFile != tmpFile.Name() {
+		t.Errorf("HARFile = %q, want %q", cfg.HARFile, tmpFile.Name())
+	}
+}
+
+func TestLoad_HARFileNotFound(t *testing.T) {
+	loader := NewLoader()
+	args := []string{
+		"--target=http://example.com",
+		"--har=/nonexistent/path/file.har",
+	}
+
+	_, err := loader.Load(args)
+	if err == nil {
+		t.Errorf("Load() expected error for missing HAR file, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "failed to open") && !strings.Contains(err.Error(), "no such file") {
+		t.Errorf("Load() error = %v, want error about missing file", err)
+	}
+}
+
+func TestLoad_HARInvalidFile(t *testing.T) {
+	// Create invalid HAR file (not JSON)
+	tmpFile, err := os.CreateTemp("", "test-*.har")
+	if err != nil {
+		t.Fatalf("Failed to create temp HAR file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString("invalid json content"); err != nil {
+		t.Fatalf("Failed to write HAR data: %v", err)
+	}
+	tmpFile.Close()
+
+	loader := NewLoader()
+	args := []string{
+		"--target=http://example.com",
+		"--har=" + tmpFile.Name(),
+	}
+
+	_, err = loader.Load(args)
+	if err == nil {
+		t.Errorf("Load() expected error for invalid HAR file, got nil")
+	}
+
+	if !strings.Contains(err.Error(), "parse") && !strings.Contains(err.Error(), "JSON") {
+		t.Errorf("Load() error = %v, want parse/JSON error", err)
+	}
+}
+
+func TestParseHARFilter(t *testing.T) {
+	tests := []struct {
+		name     string
+		filter   string
+		wantHost []string
+		wantMeth []string
+	}{
+		{
+			name:     "empty filter",
+			filter:   "",
+			wantHost: nil,
+			wantMeth: nil,
+		},
+		{
+			name:     "single host",
+			filter:   "host:example.com",
+			wantHost: []string{"example.com"},
+			wantMeth: nil,
+		},
+		{
+			name:     "multiple hosts",
+			filter:   "host:api.example.com,cdn.example.com",
+			wantHost: []string{"api.example.com", "cdn.example.com"},
+			wantMeth: nil,
+		},
+		{
+			name:     "single method",
+			filter:   "method:GET",
+			wantHost: nil,
+			wantMeth: []string{"GET"},
+		},
+		{
+			name:     "multiple methods",
+			filter:   "method:GET,POST",
+			wantHost: nil,
+			wantMeth: []string{"GET", "POST"},
+		},
+		{
+			name:     "combined filters",
+			filter:   "host:example.com;method:GET,POST",
+			wantHost: []string{"example.com"},
+			wantMeth: []string{"GET", "POST"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := parseHARFilter(tt.filter)
+			if !sliceEqual(opts["hosts"], tt.wantHost) {
+				t.Errorf("hosts = %v, want %v", opts["hosts"], tt.wantHost)
+			}
+			if !sliceEqual(opts["methods"], tt.wantMeth) {
+				t.Errorf("methods = %v, want %v", opts["methods"], tt.wantMeth)
+			}
+		})
+	}
+}
+
+func sliceEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

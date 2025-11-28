@@ -96,4 +96,4 @@ If you want the test to end when data is exhausted, set `--total` high and rely 
 
 ## Combining With Auth and Protocols
 
-Feeders work for all supported protocols (HTTP, WebSocket, SSE, gRPC). See [Usage Examples](usage.md) for full scenarios.
+Feeders work for all supported protocols (HTTP, WebSocket, SSE, gRPC). See [Usage Examples](USAGE.md) for full scenarios.

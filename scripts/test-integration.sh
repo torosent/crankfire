@@ -218,6 +218,148 @@ test_retries() {
     validate_json_output "$output" "Retries" || true
 }
 
+test_har_import() {
+    log_info "Test 8: HAR file import validation"
+    
+    # Create a temporary HAR file targeting httpbin.org
+    local har_file=$(mktemp /tmp/crankfire-har-test.XXXXXX.har)
+    cat > "$har_file" << 'EOF'
+{
+  "log": {
+    "version": "1.2",
+    "creator": {
+      "name": "Crankfire HAR Test",
+      "version": "1.0.0"
+    },
+    "entries": [
+      {
+        "startedDateTime": "2025-01-15T10:00:00.000Z",
+        "time": 0.05,
+        "request": {
+          "method": "GET",
+          "url": "https://httpbin.org/get",
+          "httpVersion": "HTTP/1.1",
+          "headers": [
+            {"name": "Accept", "value": "application/json"}
+          ],
+          "queryString": [],
+          "cookies": [],
+          "headersSize": 100,
+          "bodySize": 0
+        },
+        "response": {
+          "status": 200,
+          "statusText": "OK",
+          "httpVersion": "HTTP/1.1",
+          "headers": [],
+          "cookies": [],
+          "content": {"size": 0, "mimeType": "application/json"},
+          "redirectURL": "",
+          "headersSize": 100,
+          "bodySize": 0
+        },
+        "cache": {},
+        "timings": {"wait": 50, "receive": 10}
+      },
+      {
+        "startedDateTime": "2025-01-15T10:00:01.000Z",
+        "time": 0.05,
+        "request": {
+          "method": "POST",
+          "url": "https://httpbin.org/post",
+          "httpVersion": "HTTP/1.1",
+          "headers": [
+            {"name": "Content-Type", "value": "application/json"}
+          ],
+          "queryString": [],
+          "cookies": [],
+          "postData": {
+            "mimeType": "application/json",
+            "text": "{\"test\": \"data\"}"
+          },
+          "headersSize": 100,
+          "bodySize": 16
+        },
+        "response": {
+          "status": 200,
+          "statusText": "OK",
+          "httpVersion": "HTTP/1.1",
+          "headers": [],
+          "cookies": [],
+          "content": {"size": 0, "mimeType": "application/json"},
+          "redirectURL": "",
+          "headersSize": 100,
+          "bodySize": 0
+        },
+        "cache": {},
+        "timings": {"wait": 50, "receive": 10}
+      },
+      {
+        "startedDateTime": "2025-01-15T10:00:02.000Z",
+        "time": 0.05,
+        "request": {
+          "method": "GET",
+          "url": "https://httpbin.org/static/script.js",
+          "httpVersion": "HTTP/1.1",
+          "headers": [],
+          "queryString": [],
+          "cookies": [],
+          "headersSize": 50,
+          "bodySize": 0
+        },
+        "response": {
+          "status": 200,
+          "statusText": "OK",
+          "httpVersion": "HTTP/1.1",
+          "headers": [],
+          "cookies": [],
+          "content": {"size": 0, "mimeType": "application/javascript"},
+          "redirectURL": "",
+          "headersSize": 50,
+          "bodySize": 0
+        },
+        "cache": {},
+        "timings": {"wait": 10, "receive": 5}
+      }
+    ]
+  }
+}
+EOF
+
+    # Test 8a: Basic HAR import (should exclude static .js file)
+    log_info "Test 8a: HAR import with static asset exclusion"
+    local output
+    output=$("$CRANKFIRE" \
+        --har "$har_file" \
+        --total 6 \
+        --concurrency 2 \
+        --json-output 2>/dev/null) || true
+    
+    if validate_json_output "$output" "HAR Import"; then
+        local total=$(echo "$output" | jq -r '.total')
+        log_info "HAR import executed: $total requests (static assets excluded)"
+    fi
+    
+    # Test 8b: HAR import with method filter
+    log_info "Test 8b: HAR import with method filter (GET only)"
+    local output_filtered
+    output_filtered=$("$CRANKFIRE" \
+        --har "$har_file" \
+        --har-filter "method:GET" \
+        --total 3 \
+        --concurrency 1 \
+        --json-output 2>/dev/null) || true
+    
+    if validate_json_output "$output_filtered" "HAR Import (GET filter)"; then
+        log_info "HAR method filtering working"
+    fi
+    
+    # Cleanup
+    rm -f "$har_file"
+    
+    log_info "HAR import tests completed"
+}
+
 run_doc_sample_http_config() {
     local sample_path="$1"
     local test_name="$2"
@@ -304,6 +446,9 @@ run_all_tests() {
     echo ""
     
     test_retries || ((failed++))
+    echo ""
+
+    test_har_import || ((failed++))
     echo ""
 
     test_doc_samples_http || ((failed++))

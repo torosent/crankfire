@@ -5,40 +5,6 @@ title: Usage Examples
 
 # Usage Examples
 
-This page is a curated, docs‑friendly version of `docs/USAGE.md`.
-
-
-
-## Basics
-
-- Simple GET: `crankfire --target https://httpbin.org/get --total 100`
-- Concurrency: `--concurrency 50 --total 1000`
-- Duration‑based: `--concurrency 10 --duration 30s`
-
-## Rate Limiting & Patterns
-
-- Fixed rate: `--rate 100 --duration 1m`
-- Advanced patterns: use `load_patterns` and `arrival` in config (see examples in `USAGE.md`).
-
-## Authentication & Headers
-
-- Manual header: `--header "Authorization=Bearer token"`
-- OAuth helpers: configure `auth` section in JSON/YAML.
-
-## Protocols
-
-- WebSocket: `--protocol websocket --ws-messages '{"type":"ping"}' ...`
-- SSE: `--protocol sse --sse-read-timeout 30s ...`
-- gRPC: `--protocol grpc --grpc-proto-file ./service.proto ...`
-
-## Feeders
-
-- CSV: `--feeder-path ./users.csv --feeder-type csv`
-- JSON: `--feeder-path ./products.json --feeder-type json`
-
-See the dedicated pages for [Authentication](authentication.md), [Data Feeders](feeders.md), and [Protocols](protocols.md).
-# Usage Examples
-
 This document provides practical examples for using Crankfire in various scenarios.
 
 > **Doc Samples Ready To Run**

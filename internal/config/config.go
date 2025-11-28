@@ -43,6 +43,8 @@ type Config struct {
 	SSE          SSEConfig         `mapstructure:"sse"`
 	GRPC         GRPCConfig        `mapstructure:"grpc"`
 	Thresholds   []string          `mapstructure:"thresholds"`
+	HARFile      string            `mapstructure:"har_file"`
+	HARFilter    string            `mapstructure:"har_filter"`
 }
 
 type LoadPatternType string
@@ -160,7 +162,10 @@ func (c Config) Validate() error {
 
 	if strings.TrimSpace(c.TargetURL) == "" {
 		targetSatisfied := false
-		if len(c.Endpoints) > 0 {
+		// HAR file provides its own URLs, so target is not required
+		if strings.TrimSpace(c.HARFile) != "" {
+			targetSatisfied = true
+		} else if len(c.Endpoints) > 0 {
 			allProvideURL := true
 			for _, ep := range c.Endpoints {
 				if strings.TrimSpace(ep.URL) == "" {

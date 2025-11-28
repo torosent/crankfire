@@ -37,13 +37,16 @@ If you have ever stitched together multiple tools or scripts to run distributed 
 ## Getting Started
 
 - **Quickstart**: See [Getting Started](getting-started.md) for installation and your first test.
-- **Usage recipes**: See [Usage Examples](usage.md) for copy‑pasteable commands.
+- **Usage recipes**: See [Usage Examples](USAGE.md) for copy‑pasteable commands.
 
 ## Deep Dives
 
 - [Configuration & CLI Reference](configuration.md)
+- [HAR Import](har-import.md)
 - [Authentication](authentication.md)
 - [Data Feeders](feeders.md)
 - [Protocols](protocols.md) (HTTP, WebSocket, SSE, gRPC)
 - [Thresholds & Assertions](thresholds.md)
+- [Thresholds Quick Reference](thresholds-quick-reference.md)
 - [Dashboard & Reporting](dashboard-reporting.md)
+- [Developer Guide](developer-guide.md)

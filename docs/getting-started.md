@@ -58,7 +58,7 @@ crankfire --target https://httpbin.org/get --total 100
 
 Key points:
 
-- `--target` is required.
+- `--target` is required unless using `--har` or endpoints with full URLs.
 - `--total` controls the total number of requests (instead of duration).
 
 ### Concurrency and Duration
@@ -130,6 +130,21 @@ crankfire --target https://httpbin.org/get \
 ```
 
 Open `report.html` in your browser to view the results.
+
+## Import from HAR File
+
+You can record a browser session and replay it as a load test:
+
+1. Open browser DevTools (F12) → Network tab
+2. Perform the actions you want to test
+3. Right-click → "Save all as HAR"
+4. Run the load test:
+
+```bash
+crankfire --har recording.har --har-filter "host:api.example.com" --total 100
+```
+
+See [HAR Import](har-import.md) for filtering options and best practices.
 
 ## Next Steps
 
