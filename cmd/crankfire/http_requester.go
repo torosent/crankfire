@@ -28,17 +28,13 @@ type httpRequester struct {
 	client    *http.Client
 	builder   *httpclient.RequestBuilder
 	collector *metrics.Collector
+	helper    baseRequesterHelper
 }
 
 // Do executes an HTTP request and records metrics.
 func (r *httpRequester) Do(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	start := time.Now()
+	ctx, start, meta := r.helper.initRequest(ctx, "http")
 	builder := r.builder
-	meta := &metrics.RequestMetadata{Protocol: "http"}
 	var tmpl *endpointTemplate
 	if endpoint := endpointFromContext(ctx); endpoint != nil {
 		tmpl = endpoint

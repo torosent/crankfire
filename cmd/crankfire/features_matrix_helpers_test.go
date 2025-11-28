@@ -23,6 +23,23 @@ import (
 	"github.com/torosent/crankfire/internal/runner"
 )
 
+// feederWrapper wraps feeder.Feeder to adapt it to the expected interface
+type feederWrapper struct {
+	f feeder.Feeder
+}
+
+func (fw *feederWrapper) Next(ctx context.Context) (map[string]string, error) {
+	return fw.f.Next(ctx)
+}
+
+func (fw *feederWrapper) Close() error {
+	return fw.f.Close()
+}
+
+func (fw *feederWrapper) Len() int {
+	return fw.f.Len()
+}
+
 // getTestDuration reads the TEST_DURATION environment variable
 // and returns the parsed duration, or 5 seconds if not set.
 func getTestDuration() time.Duration {
@@ -277,7 +294,12 @@ func runLoadTestWithFeeder(t *testing.T, cfg *config.Config, serverURL string, f
 	cfgCopy.TargetURL = serverURL
 
 	// Create the actual requester used in production with feeder support
-	requester, err := NewRequesterFromConfig(&cfgCopy, collector, nil, f)
+	// Wrap feeder to match the expected interface
+	var wrappedFeeder feederAdapter
+	if f != nil {
+		wrappedFeeder = &feederWrapper{f}
+	}
+	requester, err := NewRequesterFromConfig(&cfgCopy, collector, nil, wrappedFeeder)
 	if err != nil {
 		t.Fatalf("Failed to create production requester: %v", err)
 	}

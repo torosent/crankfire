@@ -129,6 +129,11 @@ func run(args []string) error {
 			client:    client,
 			builder:   builder,
 			collector: collector,
+			helper: baseRequesterHelper{
+				collector: collector,
+				auth:      authProvider,
+				feeder:    dataFeeder,
+			},
 		}
 
 		var wrapped runner.Requester = httpReq

@@ -5,11 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/http"
-	"sort"
 	"strconv"
-	"strings"
-	"sync"
 	"time"
 
 	gws "github.com/gorilla/websocket"
@@ -17,44 +13,44 @@ import (
 	"github.com/torosent/crankfire/internal/config"
 	"github.com/torosent/crankfire/internal/httpclient"
 	"github.com/torosent/crankfire/internal/metrics"
+	"github.com/torosent/crankfire/internal/pool"
 	ws "github.com/torosent/crankfire/internal/websocket"
 )
 
 type websocketRequester struct {
-	cfg         *config.WebSocketConfig
-	target      string
-	headers     map[string]string
-	collector   *metrics.Collector
-	auth        auth.Provider
-	feeder      httpclient.Feeder
-	concurrency int
-	pools       sync.Map // map[string]chan *ws.Client
+	cfg       *config.WebSocketConfig
+	target    string
+	headers   map[string]string
+	collector *metrics.Collector
+	auth      auth.Provider
+	feeder    httpclient.Feeder
+	connPool  *pool.ConnectionPool
+	helper    baseRequesterHelper
 }
 
 func newWebSocketRequester(cfg *config.Config, collector *metrics.Collector, provider auth.Provider, feeder httpclient.Feeder) *websocketRequester {
 	return &websocketRequester{
-		cfg:         &cfg.WebSocket,
-		target:      cfg.TargetURL,
-		headers:     cfg.Headers,
-		collector:   collector,
-		auth:        provider,
-		feeder:      feeder,
-		concurrency: cfg.Concurrency,
+		cfg:       &cfg.WebSocket,
+		target:    cfg.TargetURL,
+		headers:   cfg.Headers,
+		collector: collector,
+		auth:      provider,
+		feeder:    feeder,
+		connPool:  pool.NewConnectionPool(cfg.Concurrency),
+		helper: baseRequesterHelper{
+			collector: collector,
+			auth:      provider,
+			feeder:    feeder,
+		},
 	}
 }
 
 func (w *websocketRequester) Do(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx, start, meta := w.helper.initRequest(ctx, "websocket")
 
-	start := time.Now()
-
-	record, err := nextFeederRecord(ctx, w.feeder)
+	record, err := w.helper.getFeederRecord(ctx)
 	if err != nil {
-		meta := annotateStatus(&metrics.RequestMetadata{Protocol: "websocket"}, "websocket", fallbackStatusCode(err))
-		w.collector.RecordRequest(time.Since(start), err, meta)
-		return fmt.Errorf("websocket feeder: %w", err)
+		return w.helper.recordError(start, meta, "websocket", "feeder", err)
 	}
 
 	target := w.target
@@ -62,28 +58,15 @@ func (w *websocketRequester) Do(ctx context.Context) error {
 		target = applyPlaceholders(target, record)
 	}
 
-	headerMap := applyPlaceholdersToMap(w.headers, record)
-	wsHeaders := makeHeaders(headerMap)
-	if err := ensureAuthHeader(ctx, w.auth, wsHeaders); err != nil {
-		meta := annotateStatus(&metrics.RequestMetadata{Protocol: "websocket"}, "websocket", fallbackStatusCode(err))
-		w.collector.RecordRequest(time.Since(start), err, meta)
-		return fmt.Errorf("websocket auth header: %w", err)
+	wsHeaders, err := w.helper.prepareHeaders(ctx, w.headers, record)
+	if err != nil {
+		return w.helper.recordError(start, meta, "websocket", "auth", err)
 	}
 
-	// Get or create pool for this target+headers combination
-	poolKey := makePoolKey(target, wsHeaders)
-	poolVal, _ := w.pools.LoadOrStore(poolKey, make(chan *ws.Client, w.concurrency))
-	pool := poolVal.(chan *ws.Client)
+	// Get or create client from pool
+	poolKey := pool.MakePoolKey(target, wsHeaders)
 
-	var client *ws.Client
-	var reused bool
-
-	// Try to get an existing connection from the pool
-	select {
-	case client = <-pool:
-		reused = true
-	default:
-		// Create new client if pool is empty
+	factory := func() pool.Poolable {
 		wsCfg := ws.Config{
 			URL:              target,
 			Headers:          wsHeaders,
@@ -91,17 +74,16 @@ func (w *websocketRequester) Do(ctx context.Context) error {
 			ReadTimeout:      w.cfg.ReceiveTimeout,
 			WriteTimeout:     5 * time.Second,
 		}
-		client = ws.NewClient(wsCfg)
+		return ws.NewClient(wsCfg)
 	}
 
-	meta := &metrics.RequestMetadata{Protocol: "websocket"}
+	poolable, reused := w.connPool.Get(poolKey, factory)
+	client := poolable.(*ws.Client)
 
 	// Connect if not reused
 	if !reused {
 		if err := client.Connect(ctx); err != nil {
-			meta = annotateStatus(meta, "websocket", websocketStatusFromError(err))
-			w.collector.RecordRequest(time.Since(start), err, meta)
-			return fmt.Errorf("websocket connect: %w", err)
+			return w.helper.recordError(start, meta, "websocket", "connect", err)
 		}
 	}
 
@@ -131,19 +113,20 @@ func (w *websocketRequester) Do(ctx context.Context) error {
 			// If this is a reused connection and we failed on the first message,
 			// it's likely a stale connection. Try to reconnect once.
 			if reused && i == 0 {
-				client.Close()
-				if connErr := client.Connect(ctx); connErr == nil {
-					reused = false
-					// Retry sending the message
-					if err := client.SendMessage(ctx, ws.Message{
-						Type: 1, // TextMessage
-						Data: []byte(msg),
-					}); err != nil {
-						opErr = fmt.Errorf("send message: %w", err)
-						break
-					}
-				} else {
-					opErr = fmt.Errorf("reconnect failed: %w", connErr)
+				newPoolable, ok := w.connPool.RetryStaleConnection(ctx, client, factory)
+				if !ok {
+					opErr = fmt.Errorf("reconnect failed")
+					break
+				}
+				client = newPoolable.(*ws.Client)
+				reused = false
+
+				// Retry sending the message
+				if err := client.SendMessage(ctx, ws.Message{
+					Type: 1, // TextMessage
+					Data: []byte(msg),
+				}); err != nil {
+					opErr = fmt.Errorf("send message: %w", err)
 					break
 				}
 			} else {
@@ -213,58 +196,15 @@ func (w *websocketRequester) Do(ctx context.Context) error {
 	}
 
 	// If successful, return client to pool
-	select {
-	case pool <- client:
-		// Returned to pool
-	default:
-		// Pool full (shouldn't happen if sized correctly, but safe to close)
-		client.Close()
-	}
+	w.connPool.Put(poolKey, client)
 
 	w.collector.RecordRequest(latency, nil, meta)
 	return nil
 }
 
-func makePoolKey(target string, headers http.Header) string {
-	var sb strings.Builder
-	sb.WriteString(target)
-	sb.WriteString("|")
-
-	// Sort keys for deterministic key generation
-	keys := make([]string, 0, len(headers))
-	for k := range headers {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	for _, k := range keys {
-		sb.WriteString(k)
-		sb.WriteString("=")
-		// We only care about the first value for the key typically, or join them
-		vals := headers[k]
-		for i, v := range vals {
-			if i > 0 {
-				sb.WriteString(",")
-			}
-			sb.WriteString(v)
-		}
-		sb.WriteString(";")
-	}
-	return sb.String()
-}
-
-// Close releases all WebSocket connections held in the pools.
+// Close releases all WebSocket connections held in the connection pool.
 func (w *websocketRequester) Close() error {
-	w.pools.Range(func(key, value interface{}) bool {
-		if pool, ok := value.(chan *ws.Client); ok {
-			close(pool)
-			for client := range pool {
-				client.Close()
-			}
-		}
-		return true
-	})
-	return nil
+	return w.connPool.Close()
 }
 
 func websocketStatusFromError(err error) string {

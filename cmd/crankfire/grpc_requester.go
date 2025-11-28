@@ -31,6 +31,7 @@ type grpcRequester struct {
 	methodDesc *desc.MethodDescriptor
 	methodErr  error
 	conns      sync.Map // map[string]*grpc.ClientConn
+	helper     baseRequesterHelper
 }
 
 func newGRPCRequester(cfg *config.Config, collector *metrics.Collector, provider auth.Provider, feeder httpclient.Feeder) *grpcRequester {
@@ -40,22 +41,20 @@ func newGRPCRequester(cfg *config.Config, collector *metrics.Collector, provider
 		collector: collector,
 		auth:      provider,
 		feeder:    feeder,
+		helper: baseRequesterHelper{
+			collector: collector,
+			auth:      provider,
+			feeder:    feeder,
+		},
 	}
 }
 
 func (g *grpcRequester) Do(ctx context.Context) error {
-	if ctx == nil {
-		ctx = context.Background()
-	}
+	ctx, start, meta := g.helper.initRequest(ctx, "grpc")
 
-	start := time.Now()
-	meta := &metrics.RequestMetadata{Protocol: "grpc"}
-
-	record, err := nextFeederRecord(ctx, g.feeder)
+	record, err := g.helper.getFeederRecord(ctx)
 	if err != nil {
-		meta = annotateStatus(meta, "grpc", fallbackStatusCode(err))
-		g.collector.RecordRequest(time.Since(start), err, meta)
-		return fmt.Errorf("grpc feeder: %w", err)
+		return g.helper.recordError(start, meta, "grpc", "feeder", err)
 	}
 
 	methodDesc, err := g.methodDescriptor()

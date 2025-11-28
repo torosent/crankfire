@@ -74,6 +74,7 @@ func TestFeaturesMatrix_Feeder_CSV(t *testing.T) {
 	t.Logf("CSV feeder executed with %d/%d successful requests", stats.Successes, stats.Total)
 
 	// Verify different user data was used
+	requestsMu.Lock()
 	if len(receivedData) >= 2 {
 		uniqueUsers := make(map[string]bool)
 		for _, uid := range receivedData {
@@ -83,6 +84,7 @@ func TestFeaturesMatrix_Feeder_CSV(t *testing.T) {
 			t.Logf("Expected at least 2 different users, got %d", len(uniqueUsers))
 		}
 	}
+	requestsMu.Unlock()
 
 	t.Logf("CSV feeder test completed: %d total requests, %d successes, %d failures, %.2f RPS",
 		stats.Total, stats.Successes, stats.Failures, stats.RequestsPerSec)
@@ -207,6 +209,7 @@ func TestFeaturesMatrix_Feeder_Template(t *testing.T) {
 	})
 
 	// Verify template substitution worked
+	requestsMu.Lock()
 	if len(receivedPaths) >= 2 {
 		// Check that placeholders were replaced with actual values
 		hasUserID1 := false
@@ -223,6 +226,7 @@ func TestFeaturesMatrix_Feeder_Template(t *testing.T) {
 			t.Logf("Expected to see both user IDs in requests. Paths: %v", receivedPaths)
 		}
 	}
+	requestsMu.Unlock()
 
 	t.Logf("Template substitution test completed: %d total requests, %d successes, %d failures",
 		stats.Total, stats.Successes, stats.Failures)
