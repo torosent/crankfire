@@ -1,0 +1,58 @@
+# Request Chaining Integration Test Configuration
+# This tests the extraction of values from responses and their use in subsequent requests
+
+target: http://localhost:8080
+
+endpoints:
+  # Step 1: Create a user and extract the user ID and auth token
+  - name: create-user
+    path: /api/users
+    method: POST
+    weight: 10
+    body: '{"name": "Test User", "email": "test@example.com"}'
+    headers:
+      Content-Type: application/json
+    extractors:
+      - jsonpath: "id"
+        var: user_id
+      - jsonpath: "auth.token"
+        var: auth_token
+      - jsonpath: "profile_url"
+        var: profile_url
+
+  # Step 2: Create an order using the extracted user ID
+  - name: create-order
+    path: /api/orders
+    method: POST
+    weight: 8
+    body: '{"product": "Widget", "quantity": 2}'
+    headers:
+      Content-Type: application/json
+      Authorization: "Bearer {{auth_token|default-token}}"
+      X-User-ID: "{{user_id}}"
+    extractors:
+      - jsonpath: "id"
+        var: order_id
+      - jsonpath: "total"
+        var: order_total
+
+  # Step 3: Get order details using the extracted order ID
+  - name: get-order
+    path: /api/orders/{{order_id|order-0}}
+    method: GET
+    weight: 5
+    headers:
+      Authorization: "Bearer {{auth_token|default-token}}"
+    extractors:
+      - jsonpath: "status"
+        var: order_status
+
+  # Step 4: Update the order
+  - name: update-order
+    path: /api/orders/{{order_id|order-0}}
+    method: PATCH
+    weight: 3
+    body: '{"status": "confirmed", "total": {{order_total|0}}}'
+    headers:
+      Content-Type: application/json
+      Authorization: "Bearer {{auth_token|default-token}}"

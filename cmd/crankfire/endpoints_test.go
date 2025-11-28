@@ -9,6 +9,7 @@ import (
 
 	"github.com/torosent/crankfire/internal/config"
 	"github.com/torosent/crankfire/internal/runner"
+	"github.com/torosent/crankfire/internal/variables"
 )
 
 func TestBuildEndpointTemplateOverrides(t *testing.T) {
@@ -232,4 +233,54 @@ func TestNewEndpointSelector_Errors(t *testing.T) {
 			t.Error("newEndpointSelector(weight=0) error = nil, want error")
 		}
 	})
+}
+
+func TestEndpointSelectionCreatesVariableStore(t *testing.T) {
+	selector := &endpointSelector{
+		templates:   []*endpointTemplate{{name: "only", weight: 1}},
+		totalWeight: 1,
+		rnd:         randFixed(),
+	}
+
+	storeRecorder := &variableStoreRecorder{}
+	wrapped := selector.Wrap(storeRecorder)
+
+	if err := wrapped.Do(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if storeRecorder.store == nil {
+		t.Fatalf("expected variable store in context, got nil")
+	}
+}
+
+func TestEndpointSelectionReusesVariableStore(t *testing.T) {
+	selector := &endpointSelector{
+		templates:   []*endpointTemplate{{name: "only", weight: 1}},
+		totalWeight: 1,
+		rnd:         randFixed(),
+	}
+
+	store := variables.NewStore()
+	ctx := contextWithVariableStore(context.Background(), store)
+
+	storeRecorder := &variableStoreRecorder{}
+	wrapped := selector.Wrap(storeRecorder)
+
+	if err := wrapped.Do(ctx); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if storeRecorder.store != store {
+		t.Fatalf("expected same store to be reused")
+	}
+}
+
+type variableStoreRecorder struct {
+	store variables.Store
+}
+
+func (r *variableStoreRecorder) Do(ctx context.Context) error {
+	r.store = variableStoreFromContext(ctx)
+	return nil
 }

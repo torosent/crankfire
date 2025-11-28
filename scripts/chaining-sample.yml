@@ -1,0 +1,127 @@
+target: https://api.example.com
+
+# Request Chaining Example
+# This configuration demonstrates extracting values from responses and using them
+# in subsequent requests.
+#
+# Workflow:
+# 1. Create a user account (POST /users) - extract user_id
+# 2. Fetch user profile (GET /users/{id}) - extract profile_url  
+# 3. Update user settings (PATCH /users/{id}/settings) - use extracted user_id
+# 4. List user posts (GET /users/{id}/posts) - use extracted user_id
+
+endpoints:
+  # Step 1: Create a new user
+  # This endpoint extracts the user_id from the response for use in subsequent requests
+  - name: create-user
+    path: /users
+    method: POST
+    weight: 10
+    body: |
+      {
+        "name": "{{name|John Doe}}",
+        "email": "{{email|user@example.com}}",
+        "plan": "basic"
+      }
+    headers:
+      Content-Type: application/json
+    # Extract the user ID and a session token from the response
+    extractors:
+      # JSON path extraction: get the 'id' field from response
+      - jsonpath: "id"
+        var: user_id
+      # Extract nested data: get session token from auth.token
+      - jsonpath: "auth.token"
+        var: session_token
+      # Extract a UUID that matches the pattern
+      - regex: '"request_id":"([^"]+)"'
+        var: request_id
+
+  # Step 2: Get user profile details
+  # This uses the previously extracted user_id in the URL
+  - name: get-profile
+    path: /users/{{user_id}}
+    method: GET
+    weight: 8
+    headers:
+      Authorization: "Bearer {{session_token|no-token}}"
+    extractors:
+      # Extract profile URL for later use
+      - jsonpath: "profile_url"
+        var: profile_url
+      # Extract created timestamp
+      - jsonpath: "created_at"
+        var: created_timestamp
+
+  # Step 3: Update user settings
+  # Uses the extracted user_id and session_token
+  - name: update-settings
+    path: /users/{{user_id}}/settings
+    method: PATCH
+    weight: 5
+    body: |
+      {
+        "preferences": {
+          "notifications": true,
+          "theme": "dark"
+        },
+        "request_id": "{{request_id}}"
+      }
+    headers:
+      Authorization: "Bearer {{session_token|default-token}}"
+      Content-Type: application/json
+      X-Created: "{{created_timestamp}}"
+    extractors:
+      # Extract the updated_at timestamp to verify modification
+      - jsonpath: "updated_at"
+        var: last_update
+      # Extract status for verification
+      - jsonpath: "status"
+        var: settings_status
+
+  # Step 4: List user posts
+  # Uses extracted user_id with query parameters
+  - name: list-posts
+    path: /users/{{user_id}}/posts?sort=date&limit=20
+    method: GET
+    weight: 3
+    headers:
+      Authorization: "Bearer {{session_token|none}}"
+    extractors:
+      # Extract total post count for analytics
+      - jsonpath: "pagination.total"
+        var: total_posts
+      # Extract first post ID for later use
+      - jsonpath: "items.0.id"
+        var: first_post_id
+
+  # Step 5: Delete user (optional cleanup)
+  # Extracts error code if deletion fails (with on_error: true)
+  - name: delete-user
+    path: /users/{{user_id}}
+    method: DELETE
+    weight: 1
+    headers:
+      Authorization: "Bearer {{session_token}}"
+    extractors:
+      # Extract error details if request fails (4xx/5xx response)
+      - jsonpath: "error.code"
+        var: error_code
+        on_error: true  # Extract even from error responses
+
+# Optional: Use a feeder to drive personalized requests
+# Each worker will pull user data from the CSV and use it in placeholders
+feeder:
+  path: ./users-data.csv
+  type: csv
+
+# Load test settings
+concurrency: 10        # 10 concurrent workers
+rate: 50              # 50 requests per second
+duration: 2m          # Run for 2 minutes
+
+# Each worker will:
+# 1. Read a row from the feeder CSV (containing name, email)
+# 2. Create a user - name/email come from feeder, user_id extracted
+# 3. Use extracted user_id in all subsequent requests
+# 4. Other workers do the same with their own data independently

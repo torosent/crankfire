@@ -63,6 +63,10 @@ func runHTTPServer(port int) error {
 	mux.HandleFunc("/v1/users", handleUsers)
 	mux.HandleFunc("/users/", handleUserProfile)
 	mux.HandleFunc("/search", handleSearch)
+	// Request chaining endpoints
+	mux.HandleFunc("/api/users", handleAPIUsers)
+	mux.HandleFunc("/api/orders", handleAPIOrders)
+	mux.HandleFunc("/api/orders/", handleAPIOrderByID)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusOK, map[string]any{"ok": true, "path": r.URL.Path})
 	})
@@ -121,6 +125,102 @@ func handleSearch(w http.ResponseWriter, r *http.Request) {
 		"limit":    r.URL.Query().Get("limit"),
 		"results":  []string{"alpha", "beta"},
 	})
+}
+
+// Request chaining endpoints
+
+var userCounter int
+var orderCounter int
+
+func handleAPIUsers(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		userCounter++
+		userID := fmt.Sprintf("user-%d", userCounter)
+		token := fmt.Sprintf("token-%d-%d", userCounter, time.Now().UnixNano())
+		respondJSON(w, http.StatusCreated, map[string]any{
+			"id":    userID,
+			"name":  "Test User",
+			"email": "test@example.com",
+			"auth": map[string]any{
+				"token": token,
+			},
+			"profile_url": fmt.Sprintf("/users/%s/profile", userID),
+			"created_at":  time.Now().Format(time.RFC3339),
+		})
+	case http.MethodGet:
+		respondJSON(w, http.StatusOK, map[string]any{
+			"users": []map[string]any{
+				{"id": "user-1", "name": "User 1"},
+				{"id": "user-2", "name": "User 2"},
+			},
+			"total": 2,
+		})
+	default:
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
+	}
+}
+
+func handleAPIOrders(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		orderCounter++
+		orderID := fmt.Sprintf("order-%d", orderCounter)
+		respondJSON(w, http.StatusCreated, map[string]any{
+			"id":         orderID,
+			"status":     "pending",
+			"total":      99.99,
+			"created_at": time.Now().Format(time.RFC3339),
+			"user_id":    r.Header.Get("X-User-ID"),
+		})
+	case http.MethodGet:
+		userID := r.URL.Query().Get("user_id")
+		respondJSON(w, http.StatusOK, map[string]any{
+			"orders": []map[string]any{
+				{"id": "order-1", "status": "completed", "total": 50.00},
+				{"id": "order-2", "status": "pending", "total": 75.50},
+			},
+			"user_id": userID,
+			"total":   2,
+		})
+	default:
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
+	}
+}
+
+func handleAPIOrderByID(w http.ResponseWriter, r *http.Request) {
+	// Extract order ID from path like /api/orders/order-123
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/api/orders/"), "/")
+	orderID := parts[0]
+
+	if orderID == "" {
+		respondJSON(w, http.StatusBadRequest, map[string]any{"error": "order_id required"})
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		respondJSON(w, http.StatusOK, map[string]any{
+			"id":         orderID,
+			"status":     "pending",
+			"total":      149.99,
+			"items":      []map[string]any{{"name": "Widget", "qty": 2}},
+			"created_at": time.Now().Format(time.RFC3339),
+		})
+	case http.MethodPatch, http.MethodPut:
+		respondJSON(w, http.StatusOK, map[string]any{
+			"id":         orderID,
+			"status":     "updated",
+			"updated_at": time.Now().Format(time.RFC3339),
+		})
+	case http.MethodDelete:
+		respondJSON(w, http.StatusOK, map[string]any{
+			"id":      orderID,
+			"deleted": true,
+		})
+	default:
+		respondJSON(w, http.StatusMethodNotAllowed, map[string]any{"error": "method not allowed"})
+	}
 }
 
 func respondJSON(w http.ResponseWriter, status int, payload any) {

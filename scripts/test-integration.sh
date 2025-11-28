@@ -90,6 +90,7 @@ test_sample_configs() {
         "test-endpoints.yml"
         "auth-oauth2-sample.yml"
         "feeder-csv-sample.yml"
+        "chaining-sample.yml"
         "websocket-sample.yml"
         "sse-sample.json"
         "grpc-sample.yml"
@@ -424,6 +425,35 @@ test_doc_samples_http() {
     return 0
 }
 
+test_request_chaining() {
+    log_info "Test 9: Request Chaining & Variable Extraction"
+    
+    local http_port
+    http_port=$(find_free_port)
+    local http_pid
+    if ! http_pid=$(start_doc_sample_http_server "$http_port"); then
+        log_error "Failed to start HTTP server for chaining test"
+        return 1
+    fi
+    
+    local base_url="http://127.0.0.1:${http_port}"
+    
+    # Test chaining configuration
+    run_doc_sample_http_config "$DOC_SAMPLES_ROOT/chaining-test.yml" "Request Chaining" \
+        "http://localhost:8080" "$base_url"
+    local result=$?
+    
+    kill "$http_pid" 2>/dev/null || true
+    
+    if [ $result -eq 0 ]; then
+        log_info "Request chaining test passed"
+    else
+        log_error "Request chaining test failed"
+    fi
+    
+    return $result
+}
+
 run_all_tests() {
     log_info "Starting Crankfire integration tests..."
     echo ""
@@ -452,6 +482,9 @@ run_all_tests() {
     echo ""
 
     test_doc_samples_http || ((failed++))
+    echo ""
+
+    test_request_chaining || ((failed++))
     echo ""
     
     if [ "$failed" -eq 0 ]; then

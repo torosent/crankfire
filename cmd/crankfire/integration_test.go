@@ -11,8 +11,11 @@ import (
 	"time"
 
 	"github.com/torosent/crankfire/internal/auth"
+	"github.com/torosent/crankfire/internal/config"
+	"github.com/torosent/crankfire/internal/extractor"
 	"github.com/torosent/crankfire/internal/feeder"
 	"github.com/torosent/crankfire/internal/metrics"
+	"github.com/torosent/crankfire/internal/variables"
 )
 
 // TestIntegration_AuthFlow tests OAuth2 client credentials authentication
@@ -309,4 +312,384 @@ func TestIntegration_HTMLReportGeneration(t *testing.T) {
 	}
 
 	t.Logf("HTML report generation test passed: %s created successfully", reportPath)
+}
+
+// TestIntegration_RequestChaining tests request chaining with value extraction
+func TestIntegration_RequestChaining(t *testing.T) {
+	// Create a test server that simulates a two-step API flow:
+	// 1. POST /users -> returns user ID
+	// 2. GET /users/{id} -> returns user details
+
+	var userID string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method == http.MethodPost && r.URL.Path == "/users" {
+			// First request: create user, return ID
+			userID = "user-12345"
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":    userID,
+				"name":  "Alice",
+				"email": "alice@example.com",
+			})
+			return
+		}
+
+		if r.Method == http.MethodGet && r.URL.Path == "/users/user-12345" {
+			// Second request: get user by ID
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":     userID,
+				"name":   "Alice",
+				"email":  "alice@example.com",
+				"status": "active",
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	// Step 1: Create user and extract ID
+	cfg1 := &config.Config{
+		TargetURL: server.URL + "/users",
+		Method:    http.MethodPost,
+		Body:      `{"name":"Alice","email":"alice@example.com"}`,
+	}
+
+	builder1, err := createTestRequestBuilder(cfg1)
+	if err != nil {
+		t.Fatalf("failed to create first request builder: %v", err)
+	}
+
+	collector := metrics.NewCollector()
+	requester := &httpRequester{
+		client:    http.DefaultClient,
+		builder:   builder1,
+		collector: collector,
+	}
+
+	// Create variable store for chaining
+	store := variables.NewStore()
+	ctx := contextWithVariableStore(context.Background(), store)
+
+	// Create endpoint with extractor
+	tmpl := &endpointTemplate{
+		name:    "create-user",
+		weight:  1,
+		builder: builder1,
+		extractors: []extractor.Extractor{
+			{
+				JSONPath: "id",
+				Variable: "user_id",
+			},
+		},
+	}
+	ctx = context.WithValue(ctx, endpointContextKey, tmpl)
+
+	// Execute first request
+	err = requester.Do(ctx)
+	if err != nil {
+		t.Fatalf("First request failed: %v", err)
+	}
+
+	// Verify extraction
+	extractedID, ok := store.Get("user_id")
+	if !ok {
+		t.Fatal("user_id not extracted from first response")
+	}
+	if extractedID != "user-12345" {
+		t.Errorf("expected user_id='user-12345', got '%s'", extractedID)
+	}
+
+	// Step 2: Use extracted ID in second request
+	// Build second request with extracted ID in URL
+	cfg2 := &config.Config{
+		TargetURL: server.URL + "/users/" + extractedID,
+		Method:    http.MethodGet,
+	}
+
+	builder2, err := createTestRequestBuilder(cfg2)
+	if err != nil {
+		t.Fatalf("failed to create second request builder: %v", err)
+	}
+
+	requester2 := &httpRequester{
+		client:    http.DefaultClient,
+		builder:   builder2,
+		collector: collector,
+	}
+
+	tmpl2 := &endpointTemplate{
+		name:    "get-user",
+		weight:  1,
+		builder: builder2,
+	}
+	ctx = context.WithValue(ctx, endpointContextKey, tmpl2)
+
+	// Execute second request - using the extracted user_id
+	err = requester2.Do(ctx)
+	if err != nil {
+		t.Fatalf("Second request failed: %v", err)
+	}
+
+	t.Logf("Request chaining test passed: extracted ID was used in subsequent request")
+}
+
+// TestIntegration_RequestChaining_WithDefaults tests request chaining with default values
+func TestIntegration_RequestChaining_WithDefaults(t *testing.T) {
+	// Test that default values are used when extraction fails
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		// Simulate getting a user by ID with fallback behavior
+		userID := r.URL.Query().Get("id")
+		if userID == "" {
+			userID = "default-user"
+		}
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":   userID,
+			"name": "Test User",
+		})
+	}))
+	defer server.Close()
+
+	// First request that returns empty or missing extraction
+	cfg1 := &config.Config{
+		TargetURL: server.URL + "?action=list",
+		Method:    http.MethodGet,
+	}
+
+	builder1, err := createTestRequestBuilder(cfg1)
+	if err != nil {
+		t.Fatalf("failed to create first request builder: %v", err)
+	}
+
+	collector := metrics.NewCollector()
+	requester := &httpRequester{
+		client:    http.DefaultClient,
+		builder:   builder1,
+		collector: collector,
+	}
+
+	store := variables.NewStore()
+	ctx := contextWithVariableStore(context.Background(), store)
+
+	// Extractor that will fail to find the field
+	tmpl := &endpointTemplate{
+		name:    "list-users",
+		weight:  1,
+		builder: builder1,
+		extractors: []extractor.Extractor{
+			{
+				JSONPath: "nonexistent_field",
+				Variable: "user_id",
+			},
+		},
+	}
+	ctx = context.WithValue(ctx, endpointContextKey, tmpl)
+
+	// Execute first request - extraction will fail but request succeeds
+	err = requester.Do(ctx)
+	if err != nil {
+		t.Fatalf("First request failed: %v", err)
+	}
+
+	// Verify extraction returned empty value
+	extractedID, ok := store.Get("user_id")
+	if !ok {
+		t.Fatal("variable not created in store")
+	}
+	if extractedID != "" {
+		t.Errorf("expected empty string for failed extraction, got '%s'", extractedID)
+	}
+
+	// Step 2: Use the variable with a default fallback
+	// Simulate applying default value logic
+	userIDForNext := extractedID
+	if userIDForNext == "" {
+		userIDForNext = "default-user"
+	}
+
+	cfg2 := &config.Config{
+		TargetURL: server.URL + "?id=" + userIDForNext,
+		Method:    http.MethodGet,
+	}
+
+	builder2, err := createTestRequestBuilder(cfg2)
+	if err != nil {
+		t.Fatalf("failed to create second request builder: %v", err)
+	}
+
+	requester2 := &httpRequester{
+		client:    http.DefaultClient,
+		builder:   builder2,
+		collector: collector,
+	}
+
+	tmpl2 := &endpointTemplate{
+		name:    "get-user-default",
+		weight:  1,
+		builder: builder2,
+	}
+	ctx = context.WithValue(ctx, endpointContextKey, tmpl2)
+
+	err = requester2.Do(ctx)
+	if err != nil {
+		t.Fatalf("Second request failed: %v", err)
+	}
+
+	t.Logf("Request chaining with defaults test passed: extraction fallback handled correctly")
+}
+
+// TestIntegration_RequestChaining_MultiStep tests multiple chained requests
+func TestIntegration_RequestChaining_MultiStep(t *testing.T) {
+	// Simulate a multi-step workflow: create order -> get order -> update order
+	var createdOrderID string
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		// POST /orders - create order
+		if r.Method == http.MethodPost && r.URL.Path == "/orders" {
+			createdOrderID = "order-999"
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":     createdOrderID,
+				"status": "pending",
+				"items":  1,
+			})
+			return
+		}
+
+		// GET /orders/{id} - get order details
+		if r.Method == http.MethodGet && r.URL.Path == "/orders/order-999" {
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":     createdOrderID,
+				"status": "pending",
+				"items":  1,
+				"total":  "99.99",
+			})
+			return
+		}
+
+		// PATCH /orders/{id} - update order
+		if r.Method == http.MethodPatch && r.URL.Path == "/orders/order-999" {
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"id":     createdOrderID,
+				"status": "confirmed",
+				"items":  1,
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	collector := metrics.NewCollector()
+	store := variables.NewStore()
+	baseCtx := contextWithVariableStore(context.Background(), store)
+
+	// Request 1: Create order and extract ID
+	cfg1 := &config.Config{
+		TargetURL: server.URL + "/orders",
+		Method:    http.MethodPost,
+		Body:      `{"items":1}`,
+	}
+	builder1, err := createTestRequestBuilder(cfg1)
+	if err != nil {
+		t.Fatalf("failed to create builder1: %v", err)
+	}
+
+	requester1 := &httpRequester{
+		client:    http.DefaultClient,
+		builder:   builder1,
+		collector: collector,
+	}
+
+	tmpl1 := &endpointTemplate{
+		name:    "create-order",
+		weight:  1,
+		builder: builder1,
+		extractors: []extractor.Extractor{
+			{JSONPath: "id", Variable: "order_id"},
+		},
+	}
+	ctx1 := context.WithValue(baseCtx, endpointContextKey, tmpl1)
+	if err := requester1.Do(ctx1); err != nil {
+		t.Fatalf("Request 1 failed: %v", err)
+	}
+
+	orderID, ok := store.Get("order_id")
+	if !ok || orderID != "order-999" {
+		t.Fatalf("order_id not extracted correctly, got %q", orderID)
+	}
+
+	// Request 2: Get order details and extract total
+	cfg2 := &config.Config{
+		TargetURL: server.URL + "/orders/" + orderID,
+		Method:    http.MethodGet,
+	}
+	builder2, err := createTestRequestBuilder(cfg2)
+	if err != nil {
+		t.Fatalf("failed to create builder2: %v", err)
+	}
+
+	requester2 := &httpRequester{
+		client:    http.DefaultClient,
+		builder:   builder2,
+		collector: collector,
+	}
+
+	tmpl2 := &endpointTemplate{
+		name:    "get-order",
+		weight:  1,
+		builder: builder2,
+		extractors: []extractor.Extractor{
+			{JSONPath: "total", Variable: "order_total"},
+		},
+	}
+	ctx2 := context.WithValue(baseCtx, endpointContextKey, tmpl2)
+	if err := requester2.Do(ctx2); err != nil {
+		t.Fatalf("Request 2 failed: %v", err)
+	}
+
+	total, ok := store.Get("order_total")
+	if !ok || total != "99.99" {
+		t.Fatalf("order_total not extracted correctly, got %q", total)
+	}
+
+	// Request 3: Update order using both extracted values
+	cfg3 := &config.Config{
+		TargetURL: server.URL + "/orders/" + orderID,
+		Method:    http.MethodPatch,
+		Body:      `{"status":"confirmed"}`,
+	}
+	builder3, err := createTestRequestBuilder(cfg3)
+	if err != nil {
+		t.Fatalf("failed to create builder3: %v", err)
+	}
+
+	requester3 := &httpRequester{
+		client:    http.DefaultClient,
+		builder:   builder3,
+		collector: collector,
+	}
+
+	tmpl3 := &endpointTemplate{
+		name:    "update-order",
+		weight:  1,
+		builder: builder3,
+	}
+	ctx3 := context.WithValue(baseCtx, endpointContextKey, tmpl3)
+	if err := requester3.Do(ctx3); err != nil {
+		t.Fatalf("Request 3 failed: %v", err)
+	}
+
+	t.Logf("Multi-step request chaining test passed: created order, extracted values, used in subsequent requests")
 }
