@@ -286,8 +286,14 @@ func TestFeaturesMatrix_Feeder_Cycle(t *testing.T) {
 	})
 
 	// Verify all 3 records were used multiple times
+	// Lock the mutex to safely read receivedIDs after the load test completes
+	requestsMu.Lock()
+	receivedIDsCopy := make([]string, len(receivedIDs))
+	copy(receivedIDsCopy, receivedIDs)
+	requestsMu.Unlock()
+
 	idCounts := make(map[string]int)
-	for _, id := range receivedIDs {
+	for _, id := range receivedIDsCopy {
 		idCounts[id]++
 	}
 	if len(idCounts) != 3 {
@@ -295,7 +301,7 @@ func TestFeaturesMatrix_Feeder_Cycle(t *testing.T) {
 	}
 
 	t.Logf("Feeder cycle test completed: %d total requests from %d received calls, cycles through %d records",
-		stats.Total, len(receivedIDs), len(idCounts))
+		stats.Total, len(receivedIDsCopy), len(idCounts))
 	_ = result
 }
 

@@ -181,6 +181,20 @@ func (s *sseRequester) Do(ctx context.Context) error {
 	return nil
 }
 
+// Close releases all SSE connections held in the pools.
+func (s *sseRequester) Close() error {
+	s.pools.Range(func(key, value interface{}) bool {
+		if pool, ok := value.(chan *sse.Client); ok {
+			close(pool)
+			for client := range pool {
+				client.Close()
+			}
+		}
+		return true
+	})
+	return nil
+}
+
 func sseStatusCode(err error) string {
 	if err == nil {
 		return ""

@@ -253,6 +253,20 @@ func makePoolKey(target string, headers http.Header) string {
 	return sb.String()
 }
 
+// Close releases all WebSocket connections held in the pools.
+func (w *websocketRequester) Close() error {
+	w.pools.Range(func(key, value interface{}) bool {
+		if pool, ok := value.(chan *ws.Client); ok {
+			close(pool)
+			for client := range pool {
+				client.Close()
+			}
+		}
+		return true
+	})
+	return nil
+}
+
 func websocketStatusFromError(err error) string {
 	if err == nil {
 		return ""

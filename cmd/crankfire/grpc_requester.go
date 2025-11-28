@@ -249,6 +249,17 @@ func injectGRPCAuth(ctx context.Context, provider auth.Provider, metadata map[st
 	return metadata, nil
 }
 
+// Close releases all gRPC connections held by the requester.
+func (g *grpcRequester) Close() error {
+	g.conns.Range(func(key, value interface{}) bool {
+		if conn, ok := value.(*grpc.ClientConn); ok {
+			conn.Close()
+		}
+		return true
+	})
+	return nil
+}
+
 func grpcStatusCode(err error) string {
 	if err == nil {
 		return ""

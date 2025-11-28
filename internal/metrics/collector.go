@@ -246,6 +246,9 @@ func (b *statsBucket) record(latency time.Duration, err error, protocol, statusC
 		if us > b.hist.HighestTrackableValue() {
 			us = b.hist.HighestTrackableValue()
 		}
+		// RecordValue returns an error if the value is out of range after clamping,
+		// which should not happen given the clamping above. The error is intentionally
+		// ignored as histogram accuracy degradation is non-fatal for load testing.
 		_ = b.hist.RecordValue(us)
 	}
 	b.sumLatency += latency
