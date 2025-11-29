@@ -269,15 +269,19 @@ jobs:
           sed -i "s|url \"https://github.com/torosent/crankfire/releases/download/v.*/crankfire_darwin_amd64\.tar\.gz\"|url \"https://github.com/torosent/crankfire/releases/download/${TAG}/crankfire_darwin_amd64.tar.gz\"|" "$FORMULA"
           sed -i "s|url \"https://github.com/torosent/crankfire/releases/download/v.*/crankfire_darwin_arm64\.tar\.gz\"|url \"https://github.com/torosent/crankfire/releases/download/${TAG}/crankfire_darwin_arm64.tar.gz\"|" "$FORMULA"
 
-          # Update checksums - match the exact lines with proper context
-          # For linux amd64 (after "on_linux" and "on_intel")
-          sed -i "/on_linux/,/on_intel/{s/sha256 \"[^\"]*\"/sha256 \"${{ steps.checksums.outputs.linux_amd64_sha256 }}\"/;}" "$FORMULA"
-          # For linux arm64 (after first on_arm in linux section)
-          sed -i "/on_linux/,/on_arm/{s/sha256 \"[^\"]*\"/sha256 \"${{ steps.checksums.outputs.linux_arm64_sha256 }}\"/;}" "$FORMULA"
-          # For darwin amd64 (after "on_macos" and "on_intel")
-          sed -i "/on_macos/,/on_intel/{s/sha256 \"[^\"]*\"/sha256 \"${{ steps.checksums.outputs.darwin_amd64_sha256 }}\"/;}" "$FORMULA"
-          # For darwin arm64 (after first on_arm in macos section)
-          sed -i "/on_macos/,/on_arm/{s/sha256 \"[^\"]*\"/sha256 \"${{ steps.checksums.outputs.darwin_arm64_sha256 }}\"/;}" "$FORMULA"
+          # Update checksums - match the sha256 line that follows each platform-specific URL
+          # Use awk to find the URL line and update the sha256 on the next line
+          awk -v linux_amd64="${{ steps.checksums.outputs.linux_amd64_sha256 }}" \
+              -v linux_arm64="${{ steps.checksums.outputs.linux_arm64_sha256 }}" \
+              -v darwin_amd64="${{ steps.checksums.outputs.darwin_amd64_sha256 }}" \
+              -v darwin_arm64="${{ steps.checksums.outputs.darwin_arm64_sha256 }}" '
+          {
+            print
+            if (/crankfire_linux_amd64\.tar\.gz/) { if (getline > 0 && /sha256/) gsub(/sha256 "[^"]*"/, "sha256 \"" linux_amd64 "\""); print; next }
+            if (/crankfire_linux_arm64\.tar\.gz/) { if (getline > 0 && /sha256/) gsub(/sha256 "[^"]*"/, "sha256 \"" linux_arm64 "\""); print; next }
+            if (/crankfire_darwin_amd64\.tar\.gz/) { if (getline > 0 && /sha256/) gsub(/sha256 "[^"]*"/, "sha256 \"" darwin_amd64 "\""); print; next }
+            if (/crankfire_darwin_arm64\.tar\.gz/) { if (getline > 0 && /sha256/) gsub(/sha256 "[^"]*"/, "sha256 \"" darwin_arm64 "\""); print; next }
+          }' "$FORMULA" > "${FORMULA}.tmp" && mv "${FORMULA}.tmp" "$FORMULA"
 
           git status
           if git diff --quiet; then
