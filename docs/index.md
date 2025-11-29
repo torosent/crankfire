@@ -51,3 +51,13 @@ If you have ever stitched together multiple tools or scripts to run distributed 
 - [Thresholds Quick Reference](thresholds-quick-reference.md)
 - [Dashboard & Reporting](dashboard-reporting.md)
 - [Developer Guide](developer-guide.md)
+
+## Architecture Reference
+
+- [Project Overview](architecture/1.%20Project%20Overview.md)
+- [Architecture Overview](architecture/2.%20Architecture%20Overview.md)
+- [Workflow Overview](architecture/3.%20Workflow%20Overview.md)
+- [Deep Dive: Runner Engine](architecture/Deep%20Dive%20-%20Runner%20Engine.md)
+- [Deep Dive: Metrics Engine](architecture/Deep%20Dive%20-%20Metrics%20Engine.md)
+- [Deep Dive: Protocol Implementations](architecture/Deep%20Dive%20-%20Protocol%20Implementations.md)
+- [Deep Dive: Configuration System](architecture/Deep%20Dive%20-%20Configuration%20System.md)
