@@ -88,6 +88,7 @@ func (sse *sseTestRequester) Do(ctx context.Context) error {
 
 // runWebSocketLoadTest executes a WebSocket load test
 func runWebSocketLoadTest(t *testing.T, wsURL string, message string, concurrency int, duration time.Duration) (*metrics.Stats, runner.Result) {
+	t.Helper()
 	// Create collector and start it
 	collector := metrics.NewCollector()
 	collector.Start()
@@ -116,6 +117,7 @@ func runWebSocketLoadTest(t *testing.T, wsURL string, message string, concurrenc
 
 // runSSELoadTest executes an SSE load test
 func runSSELoadTest(t *testing.T, sseURL string, concurrency int, duration time.Duration) (*metrics.Stats, runner.Result) {
+	t.Helper()
 	// Create collector and start it
 	collector := metrics.NewCollector()
 	collector.Start()
@@ -143,6 +145,7 @@ func runSSELoadTest(t *testing.T, sseURL string, concurrency int, duration time.
 
 // startWebSocketTestServer starts a WebSocket echo server for testing
 func startWebSocketTestServer(t *testing.T) *httptest.Server {
+	t.Helper()
 	upgrader := websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool { return true },
 	}
@@ -171,6 +174,7 @@ func startWebSocketTestServer(t *testing.T) *httptest.Server {
 
 // startSSETestServer starts an SSE server for testing
 func startSSETestServer(t *testing.T) *httptest.Server {
+	t.Helper()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")

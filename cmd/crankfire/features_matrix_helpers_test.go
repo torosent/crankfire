@@ -242,6 +242,7 @@ func convertArrivalModel(model config.ArrivalModel) runner.ArrivalModel {
 // runLoadTest executes a load test using runner.Runner and collects metrics
 // This function now uses the actual production httpRequester implementation
 func runLoadTest(t *testing.T, cfg *config.Config, serverURL string) (*metrics.Stats, runner.Result) {
+	t.Helper()
 	// Create collector and start it
 	collector := metrics.NewCollector()
 	collector.Start()
@@ -285,6 +286,7 @@ func runLoadTest(t *testing.T, cfg *config.Config, serverURL string) (*metrics.S
 // runLoadTestWithFeeder executes a load test with feeder data substitution
 // This function now uses the actual production requester implementation
 func runLoadTestWithFeeder(t *testing.T, cfg *config.Config, serverURL string, f feeder.Feeder) (*metrics.Stats, runner.Result) {
+	t.Helper()
 	// Create collector and start it
 	collector := metrics.NewCollector()
 	collector.Start()
@@ -343,6 +345,7 @@ var (
 
 // startTestServer starts an embedded HTTP test server for this test
 func startTestServer(t *testing.T) *testServer {
+	t.Helper()
 	testServerMu.Lock()
 	defer testServerMu.Unlock()
 
@@ -427,6 +430,7 @@ func startTestServer(t *testing.T) *testServer {
 
 // stopTestServer stops the test server
 func stopTestServer(t *testing.T, ts *testServer) {
+	t.Helper()
 	testServerMu.Lock()
 	defer testServerMu.Unlock()
 
@@ -541,6 +545,7 @@ func WithRate(rps int) configOption {
 // validateTestResults validates load test results.
 // NOTE: This function is for Phase 2+ when actual load tests are implemented.
 func validateTestResults(t *testing.T, stats *metrics.Stats, expectations resultExpectations) {
+	t.Helper()
 	if expectations.minSuccesses > 0 && stats.Successes < int64(expectations.minSuccesses) {
 		t.Errorf("Expected at least %d successes, got %d", expectations.minSuccesses, stats.Successes)
 	}
@@ -584,6 +589,7 @@ type resultExpectations struct {
 
 // createTestConfigFile creates a temporary config file for testing
 func createTestConfigFile(t *testing.T, content string) string {
+	t.Helper()
 	tmpDir := t.TempDir()
 	configPath := filepath.Join(tmpDir, "test-config.yml")
 
@@ -602,6 +608,7 @@ func fileExists(path string) bool {
 
 // createTempCSVFile creates a temporary CSV file for testing
 func createTempCSVFile(t *testing.T, content string) string {
+	t.Helper()
 	tmpDir := t.TempDir()
 	csvPath := filepath.Join(tmpDir, "test-data.csv")
 
@@ -614,6 +621,7 @@ func createTempCSVFile(t *testing.T, content string) string {
 
 // createTempJSONFile creates a temporary JSON file for testing
 func createTempJSONFile(t *testing.T, content string) string {
+	t.Helper()
 	tmpDir := t.TempDir()
 	jsonPath := filepath.Join(tmpDir, "test-data.json")
 
