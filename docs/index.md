@@ -1,6 +1,6 @@
 ---
 layout: default
-title: Home
+title: crankfire
 ---
 
 # Crankfire Documentation
@@ -54,10 +54,10 @@ If you have ever stitched together multiple tools or scripts to run distributed 
 
 ## Architecture Reference
 
-- [Project Overview](architecture/1.%20Project%20Overview.md)
-- [Architecture Overview](architecture/2.%20Architecture%20Overview.md)
-- [Workflow Overview](architecture/3.%20Workflow%20Overview.md)
-- [Deep Dive: Runner Engine](architecture/Deep%20Dive%20-%20Runner%20Engine.md)
-- [Deep Dive: Metrics Engine](architecture/Deep%20Dive%20-%20Metrics%20Engine.md)
-- [Deep Dive: Protocol Implementations](architecture/Deep%20Dive%20-%20Protocol%20Implementations.md)
-- [Deep Dive: Configuration System](architecture/Deep%20Dive%20-%20Configuration%20System.md)
+- [Project Overview](architecture/01-project-overview.md)
+- [Architecture Overview](architecture/02-architecture-overview.md)
+- [Workflow Overview](architecture/03-workflow-overview.md)
+- [Deep Dive: Runner Engine](architecture/deep-dive-runner-engine.md)
+- [Deep Dive: Metrics Engine](architecture/deep-dive-metrics-engine.md)
+- [Deep Dive: Protocol Implementations](architecture/deep-dive-protocol-implementations.md)
+- [Deep Dive: Configuration System](architecture/deep-dive-configuration-system.md)

@@ -1,0 +1,57 @@
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+  
+  mermaid.initialize({
+    startOnLoad: false,
+    theme: 'light',
+    securityLevel: 'loose',
+    c4: {
+      diagramMarginY: 50,
+      c4ShapeMargin: 50,
+      c4ShapePadding: 20
+    }
+  });
+
+  // Convert ```mermaid code blocks to mermaid divs
+  document.addEventListener("DOMContentLoaded", async function() {
+    const codeBlocks = document.querySelectorAll('pre code.language-mermaid, pre code[class*="mermaid"]');
+    
+    for (const codeBlock of codeBlocks) {
+      const pre = codeBlock.parentElement;
+      const mermaidDiv = document.createElement('div');
+      mermaidDiv.className = 'mermaid';
+      mermaidDiv.textContent = codeBlock.textContent;
+      pre.parentNode.replaceChild(mermaidDiv, pre);
+    }
+    
+    // Also check for unmarked mermaid blocks (Jekyll sometimes strips the class)
+    const allCodeBlocks = document.querySelectorAll('pre code');
+    for (const codeBlock of allCodeBlocks) {
+      const text = codeBlock.textContent.trim();
+      if (text.startsWith('C4Context') || text.startsWith('C4Container') || 
+          text.startsWith('C4Component') || text.startsWith('graph ') || 
+          text.startsWith('sequenceDiagram') || text.startsWith('flowchart')) {
+        const pre = codeBlock.parentElement;
+        const mermaidDiv = document.createElement('div');
+        mermaidDiv.className = 'mermaid';
+        mermaidDiv.textContent = text;
+        pre.parentNode.replaceChild(mermaidDiv, pre);
+      }
+    }
+    
+    await mermaid.run();
+  });
+</script>
+
+<style>
+  /* Ensure mermaid diagrams render properly */
+  .mermaid {
+    background: transparent;
+    text-align: center;
+    margin: 1.5em 0;
+  }
+  .mermaid svg {
+    max-width: 100%;
+    height: auto;
+  }
+</style>

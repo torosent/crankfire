@@ -31,4 +31,3 @@ build/
 .DS_Store
 tmp.*
 bin/
-*.html
