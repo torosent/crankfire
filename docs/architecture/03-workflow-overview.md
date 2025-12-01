@@ -560,14 +560,14 @@ flowchart TB
 ```mermaid
 flowchart TB
     subgraph "Configuration"
-        ep1[Endpoint A<br/>Weight: 8]
-        ep2[Endpoint B<br/>Weight: 2]
+        ep1[Endpoint A\nWeight: 8]
+        ep2[Endpoint B\nWeight: 2]
     end
     
     subgraph "Weight Distribution"
         total[Total Weight: 10]
-        range1[0-7 → A (80%)]
-        range2[8-9 → B (20%)]
+        range1["0-7 (80% A)"]
+        range2["8-9 (20% B)"]
     end
     
     subgraph "Selection"
@@ -589,30 +589,18 @@ flowchart TB
 
 ```mermaid
 sequenceDiagram
-    participant Loop as Event Loop
+    participant EventLoop as Event Loop
     participant Collector as Metrics Collector
     participant Widgets as UI Widgets
     participant Terminal as Terminal
 
     loop Every 500ms
-        alt Context cancelled
-            Loop->>Loop: Exit
-        else UI Event (q, Ctrl+C)
-            Loop->>Loop: Trigger shutdown
-        else Resize Event
-            Loop->>Widgets: Update dimensions
-            Loop->>Terminal: Clear & redraw
-        else Timer Tick
-            Loop->>Collector: Stats(elapsed)
-            Collector-->>Loop: Current stats
-            
-            Loop->>Widgets: Update sparkline
-            Loop->>Widgets: Update RPS gauge
-            Loop->>Widgets: Update metrics table
-            Loop->>Widgets: Update status buckets
-            Loop->>Widgets: Update endpoints
-            
-            Loop->>Terminal: Render grid
-        end
+        EventLoop->>EventLoop: Check for context cancellation
+        EventLoop->>EventLoop: Handle UI events (q, Ctrl+C)
+        EventLoop->>Widgets: Update dimensions and layout
+        EventLoop->>Collector: Stats(elapsed)
+        Collector-->>EventLoop: Current stats
+        EventLoop->>Widgets: Update widgets (sparkline, gauges, tables)
+        EventLoop->>Terminal: Render grid
     end
 ```

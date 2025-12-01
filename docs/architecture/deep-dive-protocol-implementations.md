@@ -7,7 +7,7 @@ Crankfire supports four protocols: HTTP, WebSocket, SSE (Server-Sent Events), an
 ```mermaid
 graph TB
     subgraph "Requester Interface"
-        req[Requester.Do(ctx) error]
+        req[Requester Do ctx error]
     end
     
     subgraph "Protocol Implementations"
@@ -24,7 +24,10 @@ graph TB
         grpcClient[google.golang.org/grpc]
     end
     
-    req --> http & ws & sse & grpc
+    req --> http
+    req --> ws
+    req --> sse
+    req --> grpc
     http --> httpClient
     ws --> wsClient
     sse --> sseClient

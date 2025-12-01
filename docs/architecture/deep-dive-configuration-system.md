@@ -375,7 +375,7 @@ Viper automatically maps environment variables:
 
 ```mermaid
 flowchart TB
-    config[Config] --> validate[Validate()]
+    config[Config] --> validate[Validate]
     
     validate --> basic[Basic Validation]
     basic --> target{Target provided?}
