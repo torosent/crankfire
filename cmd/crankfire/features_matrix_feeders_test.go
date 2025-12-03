@@ -375,8 +375,11 @@ func TestFeaturesMatrix_Feeder_Chaining(t *testing.T) {
 	})
 
 	// Verify chaining worked with both fields present
-	if len(receivedRequests) >= 2 {
-		for _, req := range receivedRequests {
+	requestsMu.Lock()
+	receivedRequestsCopy := append([]map[string]string(nil), receivedRequests...)
+	requestsMu.Unlock()
+	if len(receivedRequestsCopy) >= 2 {
+		for _, req := range receivedRequestsCopy {
 			if req["user_id"] == "" || req["action"] == "" {
 				t.Logf("Note: Request missing field(s): user_id=%s, action=%s (may be due to feeder cycling)",
 					req["user_id"], req["action"])
