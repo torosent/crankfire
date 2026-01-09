@@ -200,6 +200,41 @@ func TestLoader_Load(t *testing.T) {
 	}
 }
 
+func TestLoader_Load_NoArgs_ShowsUsage(t *testing.T) {
+	loader := NewLoader()
+
+	// When no arguments are provided, help/usage should be shown
+	cfg, err := loader.Load([]string{})
+	if err != ErrHelpRequested {
+		t.Errorf("Load([]) error = %v, want ErrHelpRequested", err)
+	}
+	if cfg != nil {
+		t.Errorf("Load([]) cfg should be nil, got %+v", cfg)
+	}
+}
+
+func TestLoader_Load_HelpFlag(t *testing.T) {
+	loader := NewLoader()
+
+	// --help flag should show help and return ErrHelpRequested
+	cfg, err := loader.Load([]string{"--help"})
+	if err != ErrHelpRequested {
+		t.Errorf("Load([--help]) error = %v, want ErrHelpRequested", err)
+	}
+	if cfg != nil {
+		t.Errorf("Load([--help]) cfg should be nil, got %+v", cfg)
+	}
+
+	// -h flag should also work
+	cfg, err = loader.Load([]string{"-h"})
+	if err != ErrHelpRequested {
+		t.Errorf("Load([-h]) error = %v, want ErrHelpRequested", err)
+	}
+	if cfg != nil {
+		t.Errorf("Load([-h]) cfg should be nil, got %+v", cfg)
+	}
+}
+
 func TestParseLoadPatterns(t *testing.T) {
 	input := []interface{}{
 		map[string]interface{}{
