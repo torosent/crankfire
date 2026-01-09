@@ -43,7 +43,13 @@ func (Loader) Load(args []string) (*Config, error) {
 			return nil, ErrHelpRequested
 		}
 	}
+
+	// If no arguments provided and no config file, show help/usage
 	configPath := flagSet.Lookup("config").Value.String()
+	if len(args) == 0 && configPath == "" {
+		displayHelp(cmd)
+		return nil, ErrHelpRequested
+	}
 	cfgViper := viper.New()
 	if configPath != "" {
 		cfgViper.SetConfigFile(configPath)
