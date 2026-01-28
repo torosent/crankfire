@@ -59,6 +59,7 @@ rate: 100
 | `--duration`, `-d` | Test duration (e.g. `30s`, `5m`). |
 | `--total`, `-t` | Total requests (alternative to duration). |
 | `--timeout` | Per-request timeout. |
+| `--graceful-shutdown` | Max time to wait for in-flight requests after test ends (0=default 5s, negative=cancel immediately). |
 | `--retries` | Number of retries with backoff. |
 | `--arrival-model` | `uniform` or `poisson`. |
 | `--config` | Path to JSON/YAML config. |

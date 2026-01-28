@@ -57,6 +57,7 @@ func TestRunnerHonorsDuration(t *testing.T) {
 		Concurrency:   10,
 		Duration:      50 * time.Millisecond,
 		TotalRequests: 0,
+		GracefulShutdown: 250 * time.Millisecond,
 		Requester:     &fakeRequester{latency: 5 * time.Millisecond, calls: &calls},
 	})
 	start := time.Now()
@@ -71,6 +72,46 @@ func TestRunnerHonorsDuration(t *testing.T) {
 	}
 	if res.Total <= 0 {
 		t.Fatalf("expected some requests executed")
+	}
+}
+
+func TestGracefulShutdownAllowsInflightToFinish(t *testing.T) {
+	var calls int64
+	r := runner.New(runner.Options{
+		Concurrency:      1,
+		TotalRequests:    1,
+		GracefulShutdown: 500 * time.Millisecond,
+		Requester:        &fakeRequester{latency: 200 * time.Millisecond, calls: &calls},
+	})
+	res := r.Run(context.Background())
+	if res.Total != 1 {
+		t.Fatalf("expected total 1, got %d", res.Total)
+	}
+	if res.Errors != 0 {
+		t.Fatalf("expected 0 errors, got %d", res.Errors)
+	}
+	if calls != 1 {
+		t.Fatalf("expected requester called 1 time, got %d", calls)
+	}
+}
+
+func TestGracefulShutdownZeroCancelsInflightImmediately(t *testing.T) {
+	var calls int64
+	r := runner.New(runner.Options{
+		Concurrency:      1,
+		TotalRequests:    1,
+		GracefulShutdown: -1, // negative = cancel immediately
+		Requester:        &fakeRequester{latency: 200 * time.Millisecond, calls: &calls},
+	})
+	res := r.Run(context.Background())
+	if res.Total != 1 {
+		t.Fatalf("expected total 1, got %d", res.Total)
+	}
+	if res.Errors == 0 {
+		t.Fatalf("expected errors > 0 when graceful shutdown is disabled")
+	}
+	if calls != 1 {
+		t.Fatalf("expected requester called 1 time, got %d", calls)
 	}
 }
 

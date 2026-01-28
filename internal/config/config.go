@@ -17,34 +17,35 @@ const (
 )
 
 type Config struct {
-	TargetURL    string            `mapstructure:"target"`
-	Method       string            `mapstructure:"method"`
-	Headers      map[string]string `mapstructure:"headers"`
-	Body         string            `mapstructure:"body"`
-	BodyFile     string            `mapstructure:"body_file"`
-	Concurrency  int               `mapstructure:"concurrency"`
-	Rate         int               `mapstructure:"rate"`
-	Duration     time.Duration     `mapstructure:"duration"`
-	Total        int               `mapstructure:"total"`
-	Timeout      time.Duration     `mapstructure:"timeout"`
-	Retries      int               `mapstructure:"retries"`
-	JSONOutput   bool              `mapstructure:"json_output"`
-	Dashboard    bool              `mapstructure:"dashboard"`
-	LogErrors    bool              `mapstructure:"log_errors"`
-	HTMLOutput   string            `mapstructure:"html_output"`
-	ConfigFile   string            `mapstructure:"-"`
-	LoadPatterns []LoadPattern     `mapstructure:"load_patterns"`
-	Arrival      ArrivalConfig     `mapstructure:"arrival"`
-	Endpoints    []Endpoint        `mapstructure:"endpoints"`
-	Auth         AuthConfig        `mapstructure:"auth"`
-	Feeder       FeederConfig      `mapstructure:"feeder"`
-	Protocol     Protocol          `mapstructure:"protocol"`
-	WebSocket    WebSocketConfig   `mapstructure:"websocket"`
-	SSE          SSEConfig         `mapstructure:"sse"`
-	GRPC         GRPCConfig        `mapstructure:"grpc"`
-	Thresholds   []string          `mapstructure:"thresholds"`
-	HARFile      string            `mapstructure:"har_file"`
-	HARFilter    string            `mapstructure:"har_filter"`
+	TargetURL        string            `mapstructure:"target"`
+	Method           string            `mapstructure:"method"`
+	Headers          map[string]string `mapstructure:"headers"`
+	Body             string            `mapstructure:"body"`
+	BodyFile         string            `mapstructure:"body_file"`
+	Concurrency      int               `mapstructure:"concurrency"`
+	Rate             int               `mapstructure:"rate"`
+	Duration         time.Duration     `mapstructure:"duration"`
+	Total            int               `mapstructure:"total"`
+	Timeout          time.Duration     `mapstructure:"timeout"`
+	GracefulShutdown time.Duration     `mapstructure:"graceful_shutdown"` // time to wait for in-flight requests on test end
+	Retries          int               `mapstructure:"retries"`
+	JSONOutput       bool              `mapstructure:"json_output"`
+	Dashboard        bool              `mapstructure:"dashboard"`
+	LogErrors        bool              `mapstructure:"log_errors"`
+	HTMLOutput       string            `mapstructure:"html_output"`
+	ConfigFile       string            `mapstructure:"-"`
+	LoadPatterns     []LoadPattern     `mapstructure:"load_patterns"`
+	Arrival          ArrivalConfig     `mapstructure:"arrival"`
+	Endpoints        []Endpoint        `mapstructure:"endpoints"`
+	Auth             AuthConfig        `mapstructure:"auth"`
+	Feeder           FeederConfig      `mapstructure:"feeder"`
+	Protocol         Protocol          `mapstructure:"protocol"`
+	WebSocket        WebSocketConfig   `mapstructure:"websocket"`
+	SSE              SSEConfig         `mapstructure:"sse"`
+	GRPC             GRPCConfig        `mapstructure:"grpc"`
+	Thresholds       []string          `mapstructure:"thresholds"`
+	HARFile          string            `mapstructure:"har_file"`
+	HARFilter        string            `mapstructure:"har_filter"`
 }
 
 type LoadPatternType string
@@ -225,6 +226,8 @@ func (c Config) Validate() error {
 	if c.Timeout < 0 {
 		issues = append(issues, "timeout must be >= 0")
 	}
+	// GracefulShutdown: 0 = default, negative = cancel immediately, positive = use value
+	// No validation needed - all values are valid
 	if c.Retries < 0 {
 		issues = append(issues, "retries must be >= 0")
 	}

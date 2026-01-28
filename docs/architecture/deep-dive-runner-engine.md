@@ -9,7 +9,7 @@ The runner package (`internal/runner/`) provides a high-performance, configurabl
 - Manages a pool of concurrent workers
 - Implements precise rate limiting with uniform or Poisson arrival models
 - Supports dynamic load patterns (ramp, step, spike)
-- Handles graceful shutdown via context cancellation
+- Handles graceful shutdown with configurable wait time for in-flight requests
 - Provides retry logic with exponential backoff
 
 ## Architecture
@@ -29,6 +29,7 @@ classDiagram
         +int TotalRequests
         +Duration Duration
         +int RatePerSecond
+        +Duration GracefulShutdown
         +Requester Requester
         +ArrivalModel ArrivalModel
         +LoadPattern[] LoadPatterns

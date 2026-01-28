@@ -59,6 +59,7 @@ func (Loader) Load(args []string) (*Config, error) {
 		Headers:     map[string]string{},
 		Concurrency: 1,
 		Timeout:     30 * time.Second,
+		GracefulShutdown: 5 * time.Second,
 		ConfigFile:  configPath,
 		Arrival:     ArrivalConfig{Model: ArrivalModelUniform},
 	}
@@ -177,6 +178,17 @@ func applyConfigSettings(cfg *Config, settings map[string]interface{}) error {
 			return fmt.Errorf("timeout: %w", err)
 		}
 		cfg.Timeout = dur
+	}
+
+	// Note: "graceful_shutdown" is the canonical configuration key.
+	// The "gracefulshutdown" and "graceful-shutdown" variants are supported as aliases
+	// for backwards compatibility and flexibility in configuration formats.
+	if raw, ok := lookupSetting(settings, "gracefulshutdown", "graceful_shutdown", "graceful-shutdown"); ok {
+		dur, err := asDuration(raw)
+		if err != nil {
+			return fmt.Errorf("graceful_shutdown: %w", err)
+		}
+		cfg.GracefulShutdown = dur
 	}
 
 	if raw, ok := lookupSetting(settings, "retries"); ok {

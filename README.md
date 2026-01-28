@@ -149,6 +149,7 @@ See the [Getting Started guide](https://torosent.github.io/crankfire/getting-sta
 | `--duration`, `-d` | Test duration (e.g., 30s, 1m) | 0 |
 | `--total`, `-t` | Total number of requests | 0 |
 | `--timeout` | Per-request timeout | 30s |
+| `--graceful-shutdown` | Max time to wait for in-flight requests after test ends (0=default 5s, negative=cancel immediately) | 5s |
 | `--retries` | Number of retry attempts | 0 |
 | `--arrival-model` | Arrival model (`uniform` or `poisson`) | uniform |
 | `--html-output` | Generate HTML report to the specified file path | - |
@@ -223,6 +224,7 @@ Example JSON config:
   "rate": 200,
   "duration": "1m",
   "timeout": "5s",
+  "graceful_shutdown": "5s",
   "retries": 3
 }
 ```
@@ -240,6 +242,7 @@ concurrency: 50
 rate: 200
 duration: 1m
 timeout: 5s
+graceful_shutdown: 5s
 retries: 3
 ```
 

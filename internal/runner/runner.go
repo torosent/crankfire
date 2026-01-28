@@ -33,30 +33,42 @@ func (r *Runner) Run(ctx context.Context) Result {
 	var total int64
 	var errs int64
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	// runCtx is used for in-flight requests.
+	// It is cancelled on Ctrl+C (via the parent ctx) and may be cancelled after
+	// a grace period when the test ends naturally.
+	runCtx, runCancel := context.WithCancel(ctx)
+	defer runCancel()
+
+	// schedulerCtx controls when to stop issuing *new* requests.
+	// It stops on duration/total/pattern completion or parent cancellation, but does not
+	// automatically cancel in-flight requests.
+	schedulerCtx, schedulerCancel := context.WithCancel(runCtx)
+	defer schedulerCancel()
 
 	if r.opt.Duration > 0 {
-		deadlineCtx, deadlineCancel := context.WithTimeout(ctx, r.opt.Duration)
-		ctx = deadlineCtx
+		deadlineCtx, deadlineCancel := context.WithTimeout(schedulerCtx, r.opt.Duration)
+		schedulerCtx = deadlineCtx
 		defer deadlineCancel()
 	}
 
 	var patternCancel context.CancelFunc
 	if r.plan != nil {
-		patternCtx, cancelPattern := context.WithCancel(ctx)
-		ctx = patternCtx
+		patternCtx, cancelPattern := context.WithCancel(schedulerCtx)
+		schedulerCtx = patternCtx
 		patternCancel = cancelPattern
 		go r.runPatternController(patternCtx, patternCancel)
 	}
 
 	permits := make(chan struct{}, r.opt.Concurrency)
 
+	scheduleDone := make(chan struct{})
+
 	// Scheduler: serializes rate limiting to avoid burst overshoot across workers.
 	go func() {
+		defer close(scheduleDone)
 		defer close(permits)
 		for {
-			if ctx.Err() != nil {
+			if schedulerCtx.Err() != nil {
 				return
 			}
 			current := atomic.LoadInt64(&total)
@@ -64,7 +76,7 @@ func (r *Runner) Run(ctx context.Context) Result {
 				return
 			}
 			if r.arrival != nil {
-				if err := r.arrival.Wait(ctx); err != nil {
+				if err := r.arrival.Wait(schedulerCtx); err != nil {
 					return
 				}
 			}
@@ -72,7 +84,7 @@ func (r *Runner) Run(ctx context.Context) Result {
 			atomic.AddInt64(&total, 1)
 			select {
 			case permits <- struct{}{}:
-			case <-ctx.Done():
+			case <-schedulerCtx.Done():
 				atomic.AddInt64(&total, -1)
 				return
 			}
@@ -86,18 +98,46 @@ func (r *Runner) Run(ctx context.Context) Result {
 			defer wg.Done()
 			for range permits {
 				if r.opt.Requester != nil {
-					err := r.opt.Requester.Do(ctx)
+					err := r.opt.Requester.Do(runCtx)
 					if err != nil {
 						atomic.AddInt64(&errs, 1)
 					}
 				}
-				if ctx.Err() != nil {
-					return
-				}
 			}
 		}()
 	}
-	wg.Wait()
+
+	// Wait until scheduling is complete (duration/total/pattern end or cancellation)
+	// before applying the graceful shutdown window.
+	<-scheduleDone
+
+	workersDone := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(workersDone)
+	}()
+
+	// If GracefulShutdown is negative, cancel immediately after scheduling stops.
+	// Otherwise, allow in-flight requests to finish for up to the configured window,
+	// then force cancel.
+	if r.opt.GracefulShutdown < 0 {
+		runCancel()
+		<-workersDone
+	} else {
+		timer := time.NewTimer(r.opt.GracefulShutdown)
+		defer timer.Stop()
+		select {
+		case <-workersDone:
+			// All workers finished within grace.
+		case <-runCtx.Done():
+			// Parent cancellation (Ctrl+C): just wait for workers to exit.
+			<-workersDone
+		case <-timer.C:
+			// Grace elapsed: force cancel in-flight requests.
+			runCancel()
+			<-workersDone
+		}
+	}
 
 	return Result{
 		Total:    atomic.LoadInt64(&total),

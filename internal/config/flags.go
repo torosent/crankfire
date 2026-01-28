@@ -43,6 +43,7 @@ func configureFlags(flags *pflag.FlagSet) {
 	flags.DurationP("duration", "d", 0, "How long to run the test (e.g. 30s, 1m)")
 	flags.IntP("total", "t", 0, "Total number of requests to send (0 means unlimited)")
 	flags.Duration("timeout", 30*time.Second, "Per-request timeout")
+	flags.Duration("graceful-shutdown", 5*time.Second, "Max time to wait for in-flight requests after test ends (0=default, negative=cancel immediately)")
 	flags.Int("retries", 0, "Number of retries per request")
 	flags.String("arrival-model", string(ArrivalModelUniform), "Arrival model to use when pacing requests (uniform or poisson)")
 
@@ -171,6 +172,13 @@ func applyFlagOverrides(cfg *Config, fs *pflag.FlagSet) error {
 			return err
 		}
 		cfg.Retries = val
+	}
+	if fs.Changed("graceful-shutdown") {
+		val, err := fs.GetDuration("graceful-shutdown")
+		if err != nil {
+			return err
+		}
+		cfg.GracefulShutdown = val
 	}
 	if fs.Changed("arrival-model") {
 		val, err := fs.GetString("arrival-model")

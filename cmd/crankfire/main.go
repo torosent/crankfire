@@ -144,13 +144,14 @@ func run(args []string) error {
 	}
 
 	opts := runner.Options{
-		Concurrency:   cfg.Concurrency,
-		TotalRequests: cfg.Total,
-		Duration:      cfg.Duration,
-		RatePerSecond: cfg.Rate,
-		Requester:     baseRequester,
-		ArrivalModel:  toRunnerArrivalModel(cfg.Arrival.Model),
-		LoadPatterns:  toRunnerLoadPatterns(cfg.LoadPatterns),
+		Concurrency:      cfg.Concurrency,
+		TotalRequests:    cfg.Total,
+		Duration:         cfg.Duration,
+		RatePerSecond:    cfg.Rate,
+		GracefulShutdown: cfg.GracefulShutdown,
+		Requester:        baseRequester,
+		ArrivalModel:     toRunnerArrivalModel(cfg.Arrival.Model),
+		LoadPatterns:     toRunnerLoadPatterns(cfg.LoadPatterns),
 	}
 
 	r := runner.New(opts)
