@@ -13,13 +13,23 @@ import (
 func TestParseFlagsDefaults(t *testing.T) {
 	loader := config.NewLoader()
 
+	// When no arguments are provided, help/usage is shown
 	cfg, err := loader.Load([]string{})
+	if err != config.ErrHelpRequested {
+		t.Errorf("Load([]) error = %v, want ErrHelpRequested", err)
+	}
+	if cfg != nil {
+		t.Errorf("Load([]) cfg = %v, want nil", cfg)
+	}
+
+	// Test defaults with at least one argument
+	cfg, err = loader.Load([]string{"--target", "http://example.com"})
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	if cfg.TargetURL != "" {
-		t.Errorf("TargetURL = %q, want empty", cfg.TargetURL)
+	if cfg.TargetURL != "http://example.com" {
+		t.Errorf("TargetURL = %q, want http://example.com", cfg.TargetURL)
 	}
 	if cfg.Method != "GET" {
 		t.Errorf("Method = %q, want GET", cfg.Method)
