@@ -14,6 +14,20 @@ import (
 	"github.com/torosent/crankfire/internal/metrics"
 )
 
+// TestConfig holds load test configuration parameters for display.
+type TestConfig struct {
+	TargetURL   string        // Full target URL
+	Concurrency int           // Number of concurrent workers
+	Duration    time.Duration // Test duration (0 = unlimited)
+	Total       int           // Total requests to execute (0 = unlimited)
+	Rate        int           // Requests per second (0 = unlimited)
+	Timeout     time.Duration // Request timeout
+	Retries     int           // Number of retries
+	Protocol    string        // Protocol (http, websocket, sse, grpc)
+	Method      string        // HTTP method
+	ConfigFile  string        // Path to config file if used
+}
+
 // Dashboard renders a live terminal UI for load test metrics.
 type Dashboard struct {
 	collector    *metrics.Collector
@@ -39,10 +53,11 @@ type Dashboard struct {
 	startTime      time.Time
 	targetURL      string
 	testDuration   time.Duration
+	testConfig     TestConfig
 }
 
 // New creates a new Dashboard.
-func New(collector *metrics.Collector, targetURL string, shutdownFunc func()) (*Dashboard, error) {
+func New(collector *metrics.Collector, cfg TestConfig, shutdownFunc func()) (*Dashboard, error) {
 	if err := ui.Init(); err != nil {
 		return nil, fmt.Errorf("failed to initialize termui: %w", err)
 	}
@@ -58,7 +73,8 @@ func New(collector *metrics.Collector, targetURL string, shutdownFunc func()) (*
 		rpsHistory:     make([]float64, 0, 100),
 		startTime:      time.Now(),
 		lastUpdateTime: time.Now(),
-		targetURL:      targetURL,
+		targetURL:      cfg.TargetURL,
+		testConfig:     cfg,
 	}
 
 	d.initWidgets()
@@ -265,13 +281,14 @@ func (d *Dashboard) update() {
 	if stats.Total > 0 {
 		successRate = (float64(stats.Successes) / float64(stats.Total)) * 100
 	}
-	targetDisplay := d.targetURL
-	if len(targetDisplay) > 60 {
-		targetDisplay = targetDisplay[:57] + "..."
-	}
+
+	// Build test parameters line
+	params := d.formatTestParams()
+
 	d.summaryPara.Text = fmt.Sprintf(
-		"Target: %s\nElapsed: %s | Total: %d | Success Rate: %.1f%%",
-		targetDisplay,
+		"Target: %s\n%s\nElapsed: %s | Total: %d | Success Rate: %.1f%%",
+		d.targetURL,
+		params,
 		elapsed.Round(time.Second),
 		stats.Total,
 		successRate,
@@ -457,4 +474,62 @@ func summarizeStatusBuckets(buckets map[string]map[string]int, limit int) string
 		parts = append(parts, fmt.Sprintf("%s %s x%d", strings.ToUpper(row.Protocol), row.Code, row.Count))
 	}
 	return strings.Join(parts, ", ")
+}
+
+// formatTestParams formats the test configuration parameters for display.
+func (d *Dashboard) formatTestParams() string {
+	var parts []string
+
+	// Protocol (only show if non-default)
+	if d.testConfig.Protocol != "" && d.testConfig.Protocol != "http" {
+		parts = append(parts, fmt.Sprintf("Protocol: %s", d.testConfig.Protocol))
+	}
+
+	// Method (for HTTP)
+	if d.testConfig.Method != "" && d.testConfig.Method != "GET" {
+		parts = append(parts, fmt.Sprintf("Method: %s", d.testConfig.Method))
+	}
+
+	// Concurrency
+	if d.testConfig.Concurrency > 0 {
+		parts = append(parts, fmt.Sprintf("Workers: %d", d.testConfig.Concurrency))
+	}
+
+	// Rate
+	if d.testConfig.Rate > 0 {
+		parts = append(parts, fmt.Sprintf("Rate: %d/s", d.testConfig.Rate))
+	} else {
+		parts = append(parts, "Rate: unlimited")
+	}
+
+	// Duration
+	if d.testConfig.Duration > 0 {
+		parts = append(parts, fmt.Sprintf("Duration: %s", d.testConfig.Duration))
+	}
+
+	// Total
+	if d.testConfig.Total > 0 {
+		parts = append(parts, fmt.Sprintf("Total: %d", d.testConfig.Total))
+	}
+
+	// Timeout
+	if d.testConfig.Timeout > 0 {
+		parts = append(parts, fmt.Sprintf("Timeout: %s", d.testConfig.Timeout))
+	}
+
+	// Retries (only show if set)
+	if d.testConfig.Retries > 0 {
+		parts = append(parts, fmt.Sprintf("Retries: %d", d.testConfig.Retries))
+	}
+
+	// Config file (only show if used)
+	if d.testConfig.ConfigFile != "" {
+		parts = append(parts, fmt.Sprintf("Config: %s", d.testConfig.ConfigFile))
+	}
+
+	if len(parts) == 0 {
+		return ""
+	}
+
+	return strings.Join(parts, " | ")
 }

@@ -169,7 +169,19 @@ func run(args []string) error {
 				targetURL = cfg.Endpoints[0].Path
 			}
 		}
-		dash, err = dashboard.New(collector, targetURL, cancel)
+		dashCfg := dashboard.TestConfig{
+			TargetURL:   targetURL,
+			Concurrency: cfg.Concurrency,
+			Duration:    cfg.Duration,
+			Total:       cfg.Total,
+			Rate:        cfg.Rate,
+			Timeout:     cfg.Timeout,
+			Retries:     cfg.Retries,
+			Protocol:    string(cfg.Protocol),
+			Method:      cfg.Method,
+			ConfigFile:  cfg.ConfigFile,
+		}
+		dash, err = dashboard.New(collector, dashCfg, cancel)
 		if err != nil {
 			return err
 		}

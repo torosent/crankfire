@@ -202,3 +202,114 @@ func TestUpdateProtocolMetrics(t *testing.T) {
 		t.Error("Expected connections metric")
 	}
 }
+
+func TestFormatTestParams(t *testing.T) {
+	tests := []struct {
+		name     string
+		config   TestConfig
+		contains []string
+		excludes []string
+	}{
+		{
+			name: "basic config",
+			config: TestConfig{
+				Concurrency: 10,
+				Rate:        100,
+				Duration:    30 * time.Second,
+			},
+			contains: []string{"Workers: 10", "Rate: 100/s", "Duration: 30s"},
+			excludes: []string{"Protocol:", "Method:"},
+		},
+		{
+			name: "unlimited rate",
+			config: TestConfig{
+				Concurrency: 5,
+				Rate:        0,
+			},
+			contains: []string{"Workers: 5", "Rate: unlimited"},
+		},
+		{
+			name: "websocket protocol",
+			config: TestConfig{
+				Protocol:    "websocket",
+				Concurrency: 3,
+			},
+			contains: []string{"Protocol: websocket", "Workers: 3"},
+		},
+		{
+			name: "http protocol not shown",
+			config: TestConfig{
+				Protocol:    "http",
+				Concurrency: 3,
+			},
+			excludes: []string{"Protocol:"},
+		},
+		{
+			name: "POST method shown",
+			config: TestConfig{
+				Method:      "POST",
+				Concurrency: 3,
+			},
+			contains: []string{"Method: POST"},
+		},
+		{
+			name: "GET method not shown",
+			config: TestConfig{
+				Method:      "GET",
+				Concurrency: 3,
+			},
+			excludes: []string{"Method:"},
+		},
+		{
+			name: "with retries",
+			config: TestConfig{
+				Concurrency: 5,
+				Retries:     3,
+			},
+			contains: []string{"Retries: 3"},
+		},
+		{
+			name: "with config file",
+			config: TestConfig{
+				Concurrency: 5,
+				ConfigFile:  "test.yml",
+			},
+			contains: []string{"Config: test.yml"},
+		},
+		{
+			name: "with total requests",
+			config: TestConfig{
+				Concurrency: 5,
+				Total:       1000,
+			},
+			contains: []string{"Total: 1000"},
+		},
+		{
+			name: "with timeout",
+			config: TestConfig{
+				Concurrency: 5,
+				Timeout:     10 * time.Second,
+			},
+			contains: []string{"Timeout: 10s"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := &Dashboard{testConfig: tt.config}
+			result := d.formatTestParams()
+
+			for _, s := range tt.contains {
+				if !strings.Contains(result, s) {
+					t.Errorf("expected result to contain %q, got %q", s, result)
+				}
+			}
+
+			for _, s := range tt.excludes {
+				if strings.Contains(result, s) {
+					t.Errorf("expected result NOT to contain %q, got %q", s, result)
+				}
+			}
+		})
+	}
+}
