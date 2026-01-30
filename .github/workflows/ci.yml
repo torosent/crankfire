@@ -1,4 +1,6 @@
 name: Pull Request CI
+permissions:
+  contents: read
 
 on:
   push:
