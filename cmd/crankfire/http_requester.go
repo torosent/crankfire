@@ -16,7 +16,9 @@ import (
 	"github.com/torosent/crankfire/internal/httpclient"
 	"github.com/torosent/crankfire/internal/metrics"
 	"github.com/torosent/crankfire/internal/runner"
+	"github.com/torosent/crankfire/internal/tracing"
 	"github.com/torosent/crankfire/internal/variables"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 const (
@@ -48,17 +50,32 @@ func (r *httpRequester) Do(ctx context.Context) error {
 		err := fmt.Errorf("request builder is not configured")
 		return r.helper.recordError(start, meta, "http", "setup", err)
 	}
+
+	ctx, span := tracing.StartRequestSpan(ctx, r.helper.tracer(), "http", meta.Endpoint)
+	var spanErr error
+	defer func() {
+		tracing.EndSpan(span, spanErr)
+	}()
+
 	req, err := builder.Build(ctx)
 	if err != nil {
+		spanErr = err
 		return r.helper.recordError(start, meta, "http", "build", err)
+	}
+
+	if r.helper.shouldPropagate() {
+		tracing.InjectHTTPHeaders(ctx, req.Header)
 	}
 
 	resp, err := r.client.Do(req)
 	latency := time.Since(start)
 	if err != nil {
+		spanErr = err
 		return r.helper.recordError(start, meta, "http", "execute", err)
 	}
 	defer resp.Body.Close()
+
+	span.SetAttributes(attribute.Int("http.response.status_code", resp.StatusCode))
 
 	// Read response body for extraction and error logging (up to 1MB limit).
 	// Body read errors are non-fatal; we continue with an empty body.
@@ -111,6 +128,7 @@ func (r *httpRequester) Do(ctx context.Context) error {
 	if resultErr != nil && meta.StatusCode == "" {
 		meta = annotateStatus(meta, "http", httpStatusCodeFromError(resultErr))
 	}
+	spanErr = resultErr
 	r.collector.RecordRequest(latency, resultErr, meta)
 	return resultErr
 }

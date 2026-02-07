@@ -52,7 +52,7 @@ func TestWebSocketRequester(t *testing.T) {
 	}
 
 	collector := metrics.NewCollector()
-	requester := newWebSocketRequester(cfg, collector, nil, nil)
+	requester := newWebSocketRequester(cfg, collector, nil, nil, nil)
 
 	ctx := context.Background()
 	err := requester.Do(ctx)
@@ -103,7 +103,7 @@ func TestSSERequester(t *testing.T) {
 	}
 
 	collector := metrics.NewCollector()
-	requester := newSSERequester(cfg, collector, nil, nil)
+	requester := newSSERequester(cfg, collector, nil, nil, nil)
 
 	ctx := context.Background()
 	err := requester.Do(ctx)
@@ -156,9 +156,9 @@ func TestProtocolSelection(t *testing.T) {
 			collector := metrics.NewCollector()
 			switch tt.protocol {
 			case config.ProtocolWebSocket:
-				_ = newWebSocketRequester(cfg, collector, nil, nil)
+				_ = newWebSocketRequester(cfg, collector, nil, nil, nil)
 			case config.ProtocolSSE:
-				_ = newSSERequester(cfg, collector, nil, nil)
+				_ = newSSERequester(cfg, collector, nil, nil, nil)
 			default:
 				// HTTP protocol - skip as it requires more setup
 			}

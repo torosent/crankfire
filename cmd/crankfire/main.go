@@ -20,6 +20,7 @@ import (
 	"github.com/torosent/crankfire/internal/output"
 	"github.com/torosent/crankfire/internal/runner"
 	"github.com/torosent/crankfire/internal/threshold"
+	"github.com/torosent/crankfire/internal/tracing"
 )
 
 const (
@@ -66,6 +67,17 @@ func run(args []string) error {
 		return err
 	}
 
+	// Initialize OpenTelemetry tracing
+	tracingProvider, err := tracing.Init(context.Background(), cfg.Tracing)
+	if err != nil {
+		return fmt.Errorf("tracing init: %w", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = tracingProvider.Shutdown(shutdownCtx)
+	}()
+
 	authProvider, err := buildAuthProvider(cfg)
 	if err != nil {
 		return err
@@ -88,11 +100,11 @@ func run(args []string) error {
 	var baseRequester runner.Requester
 	switch cfg.Protocol {
 	case config.ProtocolWebSocket:
-		baseRequester = newWebSocketRequester(cfg, collector, authProvider, dataFeeder)
+		baseRequester = newWebSocketRequester(cfg, collector, authProvider, dataFeeder, tracingProvider)
 	case config.ProtocolSSE:
-		baseRequester = newSSERequester(cfg, collector, authProvider, dataFeeder)
+		baseRequester = newSSERequester(cfg, collector, authProvider, dataFeeder, tracingProvider)
 	case config.ProtocolGRPC:
-		baseRequester = newGRPCRequester(cfg, collector, authProvider, dataFeeder)
+		baseRequester = newGRPCRequester(cfg, collector, authProvider, dataFeeder, tracingProvider)
 	case config.ProtocolHTTP:
 		fallthrough
 	default:
@@ -124,6 +136,7 @@ func run(args []string) error {
 				collector: collector,
 				auth:      authProvider,
 				feeder:    dataFeeder,
+				tracing:   tracingProvider,
 			},
 		}
 

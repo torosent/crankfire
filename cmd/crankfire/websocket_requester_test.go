@@ -141,7 +141,7 @@ func TestWebsocketRequester_Do(t *testing.T) {
 			feeder := &mockFeeder{data: tt.feederData}
 
 			// Create Requester
-			wr := newWebSocketRequester(cfg, collector, provider, feeder)
+			wr := newWebSocketRequester(cfg, collector, provider, feeder, nil)
 
 			// Execute
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -195,7 +195,7 @@ func TestWebsocketRequester_Placeholders(t *testing.T) {
 	provider := &mockAuthProvider{}
 	feeder := &mockFeeder{data: map[string]string{"name": "World"}}
 
-	wr := newWebSocketRequester(cfg, collector, provider, feeder)
+	wr := newWebSocketRequester(cfg, collector, provider, feeder, nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

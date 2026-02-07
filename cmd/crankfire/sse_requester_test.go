@@ -86,7 +86,7 @@ func TestSSERequester_Do(t *testing.T) {
 			feeder := &mockFeeder{data: tt.feederData}
 
 			// Create Requester
-			sr := newSSERequester(cfg, collector, provider, feeder)
+			sr := newSSERequester(cfg, collector, provider, feeder, nil)
 
 			// Execute
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -132,7 +132,7 @@ func TestSSERequester_Placeholders(t *testing.T) {
 	provider := &mockAuthProvider{}
 	feeder := &mockFeeder{data: map[string]string{"id": "123"}}
 
-	sr := newSSERequester(cfg, collector, provider, feeder)
+	sr := newSSERequester(cfg, collector, provider, feeder, nil)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
