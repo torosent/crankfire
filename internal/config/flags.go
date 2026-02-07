@@ -87,6 +87,13 @@ func configureFlags(flags *pflag.FlagSet) {
 	// HAR import flags
 	flags.String("har", "", "Path to HAR file to import as endpoints")
 	flags.String("har-filter", "", "Filter HAR entries (e.g., 'host:example.com' or 'method:GET,POST')")
+
+	// Tracing flags
+	flags.String("tracing-endpoint", "", "OTLP endpoint for trace export (e.g., localhost:4317)")
+	flags.String("tracing-protocol", "grpc", "OTLP transport protocol: 'grpc' or 'http'")
+	flags.String("tracing-service-name", "crankfire", "OpenTelemetry service name")
+	flags.Float64("tracing-sample-rate", 1.0, "Trace sampling rate (0.0 to 1.0)")
+	flags.Bool("tracing-insecure", false, "Skip TLS for OTLP exporter connection")
 }
 
 // displayHelp prints the help message for a command.
@@ -378,6 +385,43 @@ func applyFlagOverrides(cfg *Config, fs *pflag.FlagSet) error {
 			return err
 		}
 		cfg.HARFilter = strings.TrimSpace(val)
+	}
+
+	// Tracing flag overrides
+	if fs.Changed("tracing-endpoint") {
+		val, err := fs.GetString("tracing-endpoint")
+		if err != nil {
+			return err
+		}
+		cfg.Tracing.Endpoint = strings.TrimSpace(val)
+	}
+	if fs.Changed("tracing-protocol") {
+		val, err := fs.GetString("tracing-protocol")
+		if err != nil {
+			return err
+		}
+		cfg.Tracing.Protocol = strings.ToLower(strings.TrimSpace(val))
+	}
+	if fs.Changed("tracing-service-name") {
+		val, err := fs.GetString("tracing-service-name")
+		if err != nil {
+			return err
+		}
+		cfg.Tracing.ServiceName = strings.TrimSpace(val)
+	}
+	if fs.Changed("tracing-sample-rate") {
+		val, err := fs.GetFloat64("tracing-sample-rate")
+		if err != nil {
+			return err
+		}
+		cfg.Tracing.SampleRate = val
+	}
+	if fs.Changed("tracing-insecure") {
+		val, err := fs.GetBool("tracing-insecure")
+		if err != nil {
+			return err
+		}
+		cfg.Tracing.Insecure = val
 	}
 
 	return nil

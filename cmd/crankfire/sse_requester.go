@@ -13,6 +13,7 @@ import (
 	"github.com/torosent/crankfire/internal/placeholders"
 	"github.com/torosent/crankfire/internal/pool"
 	"github.com/torosent/crankfire/internal/sse"
+	"github.com/torosent/crankfire/internal/tracing"
 )
 
 type sseRequester struct {
@@ -26,7 +27,7 @@ type sseRequester struct {
 	helper    baseRequesterHelper
 }
 
-func newSSERequester(cfg *config.Config, collector *metrics.Collector, provider auth.Provider, feeder httpclient.Feeder) *sseRequester {
+func newSSERequester(cfg *config.Config, collector *metrics.Collector, provider auth.Provider, feeder httpclient.Feeder, tp *tracing.Provider) *sseRequester {
 	return &sseRequester{
 		cfg:       &cfg.SSE,
 		target:    cfg.TargetURL,
@@ -39,6 +40,7 @@ func newSSERequester(cfg *config.Config, collector *metrics.Collector, provider 
 			collector: collector,
 			auth:      provider,
 			feeder:    feeder,
+			tracing:   tp,
 		},
 	}
 }
@@ -46,8 +48,13 @@ func newSSERequester(cfg *config.Config, collector *metrics.Collector, provider 
 func (s *sseRequester) Do(ctx context.Context) error {
 	ctx, start, meta := s.helper.initRequest(ctx, "sse")
 
+	ctx, span := tracing.StartRequestSpan(ctx, s.helper.tracer(), "sse", "")
+	var spanErr error
+	defer func() { tracing.EndSpan(span, spanErr) }()
+
 	record, err := s.helper.getFeederRecord(ctx)
 	if err != nil {
+		spanErr = err
 		return s.helper.recordError(start, meta, "sse", "feeder", err)
 	}
 
@@ -58,7 +65,12 @@ func (s *sseRequester) Do(ctx context.Context) error {
 
 	requestHeaders, err := s.helper.prepareHeaders(ctx, s.headers, record)
 	if err != nil {
+		spanErr = err
 		return s.helper.recordError(start, meta, "sse", "auth", err)
+	}
+
+	if s.helper.shouldPropagate() {
+		tracing.InjectHTTPHeaders(ctx, requestHeaders)
 	}
 
 	// Get or create client from pool
@@ -79,6 +91,7 @@ func (s *sseRequester) Do(ctx context.Context) error {
 	// Connect if not reused
 	if !reused {
 		if err := client.Connect(ctx); err != nil {
+			spanErr = err
 			return s.helper.recordError(start, meta, "sse", "connect", err)
 		}
 	}
@@ -150,6 +163,7 @@ func (s *sseRequester) Do(ctx context.Context) error {
 		client.Close()
 		meta = annotateStatus(meta, "sse", fallbackStatusCode(opErr))
 		s.collector.RecordRequest(latency, opErr, meta)
+		spanErr = opErr
 		return opErr
 	}
 

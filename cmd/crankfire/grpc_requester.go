@@ -17,7 +17,9 @@ import (
 	"github.com/torosent/crankfire/internal/httpclient"
 	"github.com/torosent/crankfire/internal/metrics"
 	"github.com/torosent/crankfire/internal/placeholders"
+	"github.com/torosent/crankfire/internal/tracing"
 	"google.golang.org/grpc"
+	grpcmd "google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/protoadapt"
 )
@@ -35,7 +37,7 @@ type grpcRequester struct {
 	helper     baseRequesterHelper
 }
 
-func newGRPCRequester(cfg *config.Config, collector *metrics.Collector, provider auth.Provider, feeder httpclient.Feeder) *grpcRequester {
+func newGRPCRequester(cfg *config.Config, collector *metrics.Collector, provider auth.Provider, feeder httpclient.Feeder, tp *tracing.Provider) *grpcRequester {
 	return &grpcRequester{
 		cfg:       &cfg.GRPC,
 		target:    cfg.TargetURL,
@@ -46,6 +48,7 @@ func newGRPCRequester(cfg *config.Config, collector *metrics.Collector, provider
 			collector: collector,
 			auth:      provider,
 			feeder:    feeder,
+			tracing:   tp,
 		},
 	}
 }
@@ -53,13 +56,19 @@ func newGRPCRequester(cfg *config.Config, collector *metrics.Collector, provider
 func (g *grpcRequester) Do(ctx context.Context) error {
 	ctx, start, meta := g.helper.initRequest(ctx, "grpc")
 
+	ctx, span := tracing.StartRequestSpan(ctx, g.helper.tracer(), "grpc", g.cfg.Service+"/"+g.cfg.Method)
+	var spanErr error
+	defer func() { tracing.EndSpan(span, spanErr) }()
+
 	record, err := g.helper.getFeederRecord(ctx)
 	if err != nil {
+		spanErr = err
 		return g.helper.recordError(start, meta, "grpc", "feeder", err)
 	}
 
 	methodDesc, err := g.methodDescriptor()
 	if err != nil {
+		spanErr = err
 		return g.helper.recordError(start, meta, "grpc", "load proto descriptor", err)
 	}
 
@@ -70,7 +79,18 @@ func (g *grpcRequester) Do(ctx context.Context) error {
 
 	metadata := buildGRPCMetadata(g.cfg.Metadata, record)
 	if metadata, err = injectGRPCAuth(ctx, g.auth, metadata); err != nil {
+		spanErr = err
 		return g.helper.recordError(start, meta, "grpc", "grpc auth metadata", err)
+	}
+
+	if g.helper.shouldPropagate() {
+		md := grpcmd.New(metadata)
+		tracing.InjectGRPCMetadata(ctx, md)
+		for k, vals := range md {
+			if len(vals) > 0 {
+				metadata[k] = vals[0]
+			}
+		}
 	}
 
 	messagePayload := g.cfg.Message
@@ -80,6 +100,7 @@ func (g *grpcRequester) Do(ctx context.Context) error {
 
 	reqMsg, err := buildDynamicRequest(methodDesc, messagePayload)
 	if err != nil {
+		spanErr = err
 		return g.helper.recordError(start, meta, "grpc", "grpc request payload", err)
 	}
 	respMsg := dynamic.NewMessage(methodDesc.GetOutputType())
@@ -104,6 +125,7 @@ func (g *grpcRequester) Do(ctx context.Context) error {
 		// which are thrown away by LoadOrStore, but that's acceptable.
 		newConn, err := grpcclient.Dial(ctx, grpcCfg)
 		if err != nil {
+			spanErr = err
 			meta = annotateStatus(meta, "grpc", grpcStatusCode(err))
 			g.collector.RecordRequest(time.Since(start), err, meta)
 			return fmt.Errorf("grpc connect: %w", err)
@@ -131,6 +153,7 @@ func (g *grpcRequester) Do(ctx context.Context) error {
 	respProto := protoadapt.MessageV2Of(respMsg)
 	if err := client.Invoke(callCtx, reqProto, respProto); err != nil {
 		latency := time.Since(start)
+		spanErr = err
 		meta = annotateStatus(meta, "grpc", grpcStatusCode(err))
 		g.collector.RecordRequest(latency, err, meta)
 		return fmt.Errorf("grpc invoke: %w", err)

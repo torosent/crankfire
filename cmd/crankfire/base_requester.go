@@ -10,6 +10,8 @@ import (
 	"github.com/torosent/crankfire/internal/httpclient"
 	"github.com/torosent/crankfire/internal/metrics"
 	"github.com/torosent/crankfire/internal/placeholders"
+	"github.com/torosent/crankfire/internal/tracing"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // makeHeaders converts a map[string]string to http.Header
@@ -26,6 +28,23 @@ type baseRequesterHelper struct {
 	collector *metrics.Collector
 	auth      auth.Provider
 	feeder    httpclient.Feeder
+	tracing   *tracing.Provider
+}
+
+// tracer returns the OTel tracer, or a no-op if tracing is not configured.
+func (b *baseRequesterHelper) tracer() trace.Tracer {
+	if b.tracing == nil {
+		return trace.NewNoopTracerProvider().Tracer("crankfire")
+	}
+	return b.tracing.Tracer()
+}
+
+// shouldPropagate returns whether W3C trace headers should be injected.
+func (b *baseRequesterHelper) shouldPropagate() bool {
+	if b.tracing == nil {
+		return false
+	}
+	return b.tracing.ShouldPropagate()
 }
 
 // prepareContext ensures context is not nil and returns it.

@@ -15,6 +15,7 @@ import (
 	"github.com/torosent/crankfire/internal/metrics"
 	"github.com/torosent/crankfire/internal/placeholders"
 	"github.com/torosent/crankfire/internal/pool"
+	"github.com/torosent/crankfire/internal/tracing"
 	ws "github.com/torosent/crankfire/internal/websocket"
 )
 
@@ -29,7 +30,7 @@ type websocketRequester struct {
 	helper    baseRequesterHelper
 }
 
-func newWebSocketRequester(cfg *config.Config, collector *metrics.Collector, provider auth.Provider, feeder httpclient.Feeder) *websocketRequester {
+func newWebSocketRequester(cfg *config.Config, collector *metrics.Collector, provider auth.Provider, feeder httpclient.Feeder, tp *tracing.Provider) *websocketRequester {
 	return &websocketRequester{
 		cfg:       &cfg.WebSocket,
 		target:    cfg.TargetURL,
@@ -42,6 +43,7 @@ func newWebSocketRequester(cfg *config.Config, collector *metrics.Collector, pro
 			collector: collector,
 			auth:      provider,
 			feeder:    feeder,
+			tracing:   tp,
 		},
 	}
 }
@@ -49,8 +51,13 @@ func newWebSocketRequester(cfg *config.Config, collector *metrics.Collector, pro
 func (w *websocketRequester) Do(ctx context.Context) error {
 	ctx, start, meta := w.helper.initRequest(ctx, "websocket")
 
+	ctx, span := tracing.StartRequestSpan(ctx, w.helper.tracer(), "websocket", "")
+	var spanErr error
+	defer func() { tracing.EndSpan(span, spanErr) }()
+
 	record, err := w.helper.getFeederRecord(ctx)
 	if err != nil {
+		spanErr = err
 		return w.helper.recordError(start, meta, "websocket", "feeder", err)
 	}
 
@@ -61,7 +68,12 @@ func (w *websocketRequester) Do(ctx context.Context) error {
 
 	wsHeaders, err := w.helper.prepareHeaders(ctx, w.headers, record)
 	if err != nil {
+		spanErr = err
 		return w.helper.recordError(start, meta, "websocket", "auth", err)
+	}
+
+	if w.helper.shouldPropagate() {
+		tracing.InjectHTTPHeaders(ctx, wsHeaders)
 	}
 
 	// Get or create client from pool
@@ -84,6 +96,7 @@ func (w *websocketRequester) Do(ctx context.Context) error {
 	// Connect if not reused
 	if !reused {
 		if err := client.Connect(ctx); err != nil {
+			spanErr = err
 			return w.helper.recordError(start, meta, "websocket", "connect", err)
 		}
 	}
@@ -193,6 +206,7 @@ func (w *websocketRequester) Do(ctx context.Context) error {
 		client.Close()
 		meta = annotateStatus(meta, "websocket", websocketStatusFromError(opErr))
 		w.collector.RecordRequest(latency, opErr, meta)
+		spanErr = opErr
 		return opErr
 	}
 

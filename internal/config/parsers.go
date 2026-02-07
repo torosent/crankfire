@@ -84,6 +84,30 @@ func asInt(value interface{}) (int, error) {
 	}
 }
 
+// asFloat64 converts an interface value to a float64.
+// Handles all numeric types and string representations.
+func asFloat64(value interface{}) (float64, error) {
+	switch v := value.(type) {
+	case nil:
+		return 0, nil
+	case float64:
+		return v, nil
+	case float32:
+		return float64(v), nil
+	case int:
+		return float64(v), nil
+	case int64:
+		return float64(v), nil
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return 0, nil
+		}
+		return strconv.ParseFloat(strings.TrimSpace(v), 64)
+	default:
+		return 0, fmt.Errorf("unsupported float type %T", value)
+	}
+}
+
 // asBool converts an interface value to a bool.
 // Handles bool and string representations.
 func asBool(value interface{}) (bool, error) {

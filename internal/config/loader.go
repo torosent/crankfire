@@ -343,6 +343,14 @@ func applyConfigSettings(cfg *Config, settings map[string]interface{}) error {
 		cfg.HARFilter = strings.TrimSpace(val)
 	}
 
+	if raw, ok := lookupSetting(settings, "tracing"); ok {
+		tracing, err := parseTracingConfig(raw)
+		if err != nil {
+			return fmt.Errorf("tracing: %w", err)
+		}
+		cfg.Tracing = tracing
+	}
+
 	return nil
 }
 
@@ -951,6 +959,64 @@ func parseHARFilter(filter string) map[string][]string {
 	}
 
 	return opts
+}
+
+func parseTracingConfig(value interface{}) (TracingConfig, error) {
+	if value == nil {
+		return TracingConfig{}, nil
+	}
+	entry, err := toStringKeyMap(value)
+	if err != nil {
+		return TracingConfig{}, err
+	}
+	return buildTracingConfig(entry)
+}
+
+func buildTracingConfig(settings map[string]interface{}) (TracingConfig, error) {
+	var tracing TracingConfig
+	if raw, ok := lookupSetting(settings, "endpoint"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return TracingConfig{}, fmt.Errorf("endpoint: %w", err)
+		}
+		tracing.Endpoint = strings.TrimSpace(val)
+	}
+	if raw, ok := lookupSetting(settings, "protocol"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return TracingConfig{}, fmt.Errorf("protocol: %w", err)
+		}
+		tracing.Protocol = strings.ToLower(strings.TrimSpace(val))
+	}
+	if raw, ok := lookupSetting(settings, "servicename", "service_name", "service-name"); ok {
+		val, err := asString(raw)
+		if err != nil {
+			return TracingConfig{}, fmt.Errorf("service_name: %w", err)
+		}
+		tracing.ServiceName = strings.TrimSpace(val)
+	}
+	if raw, ok := lookupSetting(settings, "samplerate", "sample_rate", "sample-rate"); ok {
+		val, err := asFloat64(raw)
+		if err != nil {
+			return TracingConfig{}, fmt.Errorf("sample_rate: %w", err)
+		}
+		tracing.SampleRate = val
+	}
+	if raw, ok := lookupSetting(settings, "insecure"); ok {
+		val, err := asBool(raw)
+		if err != nil {
+			return TracingConfig{}, fmt.Errorf("insecure: %w", err)
+		}
+		tracing.Insecure = val
+	}
+	if raw, ok := lookupSetting(settings, "propagate"); ok {
+		val, err := asBool(raw)
+		if err != nil {
+			return TracingConfig{}, fmt.Errorf("propagate: %w", err)
+		}
+		tracing.Propagate = &val
+	}
+	return tracing, nil
 }
 
 // loadHAREndpoints validates that the HAR file exists and is readable JSON.

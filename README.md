@@ -177,6 +177,11 @@ See the [Getting Started guide](https://torosent.github.io/crankfire/getting-sta
 | `--grpc-tls` | Use TLS for gRPC | false |
 | `--grpc-insecure` | Skip TLS certificate verification | false |
 | `--threshold` | Performance threshold (repeatable, e.g., `http_req_duration:p95 < 500`) | - |
+| `--tracing-endpoint` | OTLP endpoint for trace export (e.g., `localhost:4317`) | - |
+| `--tracing-protocol` | OTLP transport: `grpc` or `http` | grpc |
+| `--tracing-service-name` | OpenTelemetry service name | crankfire |
+| `--tracing-sample-rate` | Trace sampling rate (0.0 to 1.0) | 1.0 |
+| `--tracing-insecure` | Skip TLS for OTLP exporter connection | false |
 
 For a complete CLI reference and configuration guide, see [Configuration & CLI Reference](https://torosent.github.io/crankfire/configuration.html).
 
@@ -352,6 +357,34 @@ grpc:
   message: '{"user_id": "123", "item": "book"}'
   timeout: 2s
 ```
+
+### 6. OpenTelemetry Tracing
+
+Export spans and propagate W3C trace context to correlate load test traffic in your observability stack.
+
+```bash
+crankfire --target https://api.example.com \
+  --concurrency 20 \
+  --duration 1m \
+  --tracing-endpoint localhost:4317 \
+  --tracing-insecure
+```
+
+Or in a config file:
+
+```yaml
+target: https://api.example.com
+concurrency: 20
+duration: 1m
+tracing:
+  endpoint: localhost:4317
+  protocol: grpc
+  service_name: my-load-test
+  sample_rate: 0.1
+  insecure: true
+```
+
+Standard OpenTelemetry environment variables (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME`) are also supported.
 
 ## Output Examples
 

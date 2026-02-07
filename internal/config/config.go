@@ -46,6 +46,30 @@ type Config struct {
 	Thresholds       []string          `mapstructure:"thresholds"`
 	HARFile          string            `mapstructure:"har_file"`
 	HARFilter        string            `mapstructure:"har_filter"`
+	Tracing          TracingConfig     `mapstructure:"tracing"`
+}
+
+type TracingConfig struct {
+	Endpoint    string  `mapstructure:"endpoint"`     // OTLP endpoint (e.g., localhost:4317)
+	Protocol    string  `mapstructure:"protocol"`     // "grpc" or "http" (OTLP transport, default: grpc)
+	ServiceName string  `mapstructure:"service_name"` // OTel service name (default: crankfire)
+	SampleRate  float64 `mapstructure:"sample_rate"`  // 0.0–1.0 (default: 1.0)
+	Insecure    bool    `mapstructure:"insecure"`     // skip TLS for exporter connection
+	Propagate   *bool   `mapstructure:"propagate"`    // inject W3C trace headers on outgoing requests (default: true when tracing enabled)
+}
+
+// Enabled returns true when a tracing endpoint is configured.
+func (t TracingConfig) Enabled() bool {
+	return strings.TrimSpace(t.Endpoint) != ""
+}
+
+// ShouldPropagate returns true when W3C trace headers should be injected.
+// Defaults to true when tracing is enabled.
+func (t TracingConfig) ShouldPropagate() bool {
+	if t.Propagate != nil {
+		return *t.Propagate
+	}
+	return t.Enabled()
 }
 
 type LoadPatternType string
