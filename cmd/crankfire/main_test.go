@@ -104,6 +104,106 @@ func TestToRunnerLoadSteps(t *testing.T) {
 	}
 }
 
+func TestBuildDashPatternSteps(t *testing.T) {
+	tests := []struct {
+		name          string
+		patterns      []config.LoadPattern
+		wantName      string
+		wantStepCount int
+		wantTotal     time.Duration
+	}{
+		{
+			name:          "empty",
+			patterns:      nil,
+			wantStepCount: 0,
+			wantTotal:     0,
+		},
+		{
+			name: "step pattern from problem statement",
+			patterns: []config.LoadPattern{
+				{
+					Name: "step-up",
+					Type: config.LoadPatternTypeStep,
+					Steps: []config.LoadStep{
+						{RPS: 10, Duration: 20 * time.Second},
+						{RPS: 50, Duration: 50 * time.Second},
+						{RPS: 100, Duration: 60 * time.Second},
+						{RPS: 100, Duration: 7*time.Minute + 50*time.Second},
+					},
+				},
+			},
+			wantName:      "step-up",
+			wantStepCount: 4,
+			wantTotal:     20*time.Second + 50*time.Second + 60*time.Second + 7*time.Minute + 50*time.Second,
+		},
+		{
+			name: "ramp pattern",
+			patterns: []config.LoadPattern{
+				{Name: "ramp-up", Type: config.LoadPatternTypeRamp, FromRPS: 0, ToRPS: 100, Duration: time.Minute},
+			},
+			wantName:      "ramp-up",
+			wantStepCount: 1,
+			wantTotal:     time.Minute,
+		},
+		{
+			name: "spike pattern",
+			patterns: []config.LoadPattern{
+				{Name: "spike", Type: config.LoadPatternTypeSpike, RPS: 500, Duration: 10 * time.Second},
+			},
+			wantName:      "spike",
+			wantStepCount: 1,
+			wantTotal:     10 * time.Second,
+		},
+		{
+			name: "constant pattern",
+			patterns: []config.LoadPattern{
+				{Name: "const", Type: config.LoadPatternTypeConstant, RPS: 50, Duration: 30 * time.Second},
+			},
+			wantName:      "const",
+			wantStepCount: 1,
+			wantTotal:     30 * time.Second,
+		},
+		{
+			name: "step start offsets are cumulative",
+			patterns: []config.LoadPattern{
+				{
+					Name: "two-step",
+					Type: config.LoadPatternTypeStep,
+					Steps: []config.LoadStep{
+						{RPS: 10, Duration: 20 * time.Second},
+						{RPS: 50, Duration: 30 * time.Second},
+					},
+				},
+			},
+			wantStepCount: 2,
+			wantTotal:     50 * time.Second,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			name, steps, total := buildDashPatternSteps(tt.patterns)
+			if tt.wantName != "" && name != tt.wantName {
+				t.Errorf("name = %q, want %q", name, tt.wantName)
+			}
+			if len(steps) != tt.wantStepCount {
+				t.Errorf("len(steps) = %d, want %d", len(steps), tt.wantStepCount)
+			}
+			if total != tt.wantTotal {
+				t.Errorf("total = %v, want %v", total, tt.wantTotal)
+			}
+			// Verify cumulative start offsets for multi-step patterns.
+			var offset time.Duration
+			for i, s := range steps {
+				if s.Start != offset {
+					t.Errorf("steps[%d].Start = %v, want %v", i, s.Start, offset)
+				}
+				offset += s.Duration
+			}
+		})
+	}
+}
+
 func TestHTTPRequester_ExtractsJSONPath(t *testing.T) {
 	// Test extracting a JSON path from a successful response
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -14,6 +14,13 @@ import (
 	"github.com/torosent/crankfire/internal/metrics"
 )
 
+// PatternStep is a simplified display descriptor for one compiled segment of a load pattern.
+type PatternStep struct {
+	Label    string        // human-readable description, e.g., "10 RPS" or "10→100 RPS"
+	Duration time.Duration // duration of this step
+	Start    time.Duration // cumulative start offset from test start
+}
+
 // TestConfig holds load test configuration parameters for display.
 type TestConfig struct {
 	TargetURL   string        // Full target URL
@@ -26,6 +33,11 @@ type TestConfig struct {
 	Protocol    string        // Protocol (http, websocket, sse, grpc)
 	Method      string        // HTTP method
 	ConfigFile  string        // Path to config file if used
+
+	// Load pattern fields (populated when load_patterns are configured).
+	LoadPatternName  string        // display name for the load pattern(s)
+	LoadPatternSteps []PatternStep // all compiled steps in execution order
+	LoadPatternTotal time.Duration // total scheduled duration across all steps
 }
 
 // Dashboard renders a live terminal UI for load test metrics.
@@ -111,7 +123,7 @@ func (d *Dashboard) initWidgets() {
 
 	// Status Bucket List
 	d.errorList = widgets.NewList()
-	d.errorList.Title = "Status Buckets"
+	d.errorList.Title = "Failing Status Codes"
 	d.errorList.Rows = []string{"No failures"}
 	d.errorList.TextStyle = ui.NewStyle(ui.ColorYellow)
 	d.errorList.BorderStyle.Fg = ui.ColorCyan
@@ -285,13 +297,24 @@ func (d *Dashboard) update() {
 	// Build test parameters line
 	params := d.formatTestParams()
 
-	d.summaryPara.Text = fmt.Sprintf(
-		"Target: %s\n%s\nElapsed: %s | Total: %d | Success Rate: %.1f%%",
-		d.targetURL,
-		params,
+	progressLine := fmt.Sprintf("Elapsed: %s | Total: %d | Success Rate: %.1f%%",
 		elapsed.Round(time.Second),
 		stats.Total,
 		successRate,
+	)
+	if d.testConfig.LoadPatternTotal > 0 {
+		patternPct := float64(elapsed) / float64(d.testConfig.LoadPatternTotal) * 100
+		if patternPct > 100 {
+			patternPct = 100
+		}
+		progressLine += fmt.Sprintf(" | Progress: %.0f%%", patternPct)
+	}
+
+	d.summaryPara.Text = fmt.Sprintf(
+		"Target: %s\n%s\n%s",
+		d.targetURL,
+		params,
+		progressLine,
 	)
 
 	d.metricsPara.Text = fmt.Sprintf(
@@ -320,7 +343,11 @@ func (d *Dashboard) update() {
 	d.errorList.Rows = formatStatusListRows(stats.StatusBuckets)
 
 	d.updateEndpointList(stats)
-	d.updateProtocolMetrics(stats)
+	if len(d.testConfig.LoadPatternSteps) > 0 {
+		d.updateLoadPattern(elapsed)
+	} else {
+		d.updateProtocolMetrics(stats)
+	}
 }
 
 // render draws all widgets to the screen.
@@ -413,6 +440,98 @@ func (d *Dashboard) updateProtocolMetrics(stats metrics.Stats) {
 	}
 
 	d.protocolPara.Text = joinLines(lines)
+}
+
+func (d *Dashboard) updateLoadPattern(elapsed time.Duration) {
+	steps := d.testConfig.LoadPatternSteps
+	d.protocolPara.Title = fmt.Sprintf("Load Pattern: %s", d.testConfig.LoadPatternName)
+
+	total := d.testConfig.LoadPatternTotal
+	patternPct := 0.0
+	if total > 0 {
+		patternPct = float64(elapsed) / float64(total) * 100
+		if patternPct > 100 {
+			patternPct = 100
+		}
+	}
+
+	// Find the currently active step.
+	currentStep := -1
+	for i, step := range steps {
+		end := step.Start + step.Duration
+		if elapsed >= step.Start && elapsed < end {
+			currentStep = i
+			break
+		}
+	}
+
+	// Build a compact progress bar.
+	const barWidth = 20
+	filled := int(patternPct / 100 * barWidth)
+	if filled > barWidth {
+		filled = barWidth
+	}
+	bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
+
+	var totalStr string
+	if total > 0 {
+		totalStr = formatPatternDuration(total)
+	} else {
+		totalStr = "?"
+	}
+	line1 := fmt.Sprintf("[%s](fg:cyan) %.0f%% | %s / %s",
+		bar,
+		patternPct,
+		formatPatternDuration(elapsed.Round(time.Second)),
+		totalStr,
+	)
+
+	// Build step indicators, one per step.
+	stepParts := make([]string, 0, len(steps))
+	for i, step := range steps {
+		label := step.Label + "×" + formatPatternDuration(step.Duration)
+		switch {
+		case i == currentStep:
+			stepParts = append(stepParts, fmt.Sprintf("[► %s](fg:yellow,mod:bold)", label))
+		case elapsed >= step.Start+step.Duration:
+			stepParts = append(stepParts, fmt.Sprintf("[✓ %s](fg:green)", label))
+		default:
+			stepParts = append(stepParts, fmt.Sprintf("[· %s](fg:white)", label))
+		}
+	}
+	line2 := strings.Join(stepParts, "  ")
+
+	d.protocolPara.Text = line1 + "\n" + line2
+}
+
+// formatPatternDuration formats a duration for load pattern display, trimming trailing zero components.
+// For example, "1m0s" becomes "1m" and "2h0m0s" becomes "2h".
+func formatPatternDuration(d time.Duration) string {
+	if d == 0 {
+		return "0s"
+	}
+	s := d.String()
+	// Only trim "0s" when it follows a non-digit (i.e., a unit letter such as 'm' or 'h'),
+	// meaning the seconds component is exactly zero and not part of a larger seconds value.
+	// For example: "1m0s" → trim to "1m", but "20s" is left unchanged because '2' is not a letter.
+	if len(s) >= 3 && strings.HasSuffix(s, "0s") {
+		// The character before "0s" must be a letter to safely trim.
+		prev := s[len(s)-3]
+		if prev >= 'a' && prev <= 'z' {
+			s = s[:len(s)-2]
+		}
+	}
+	// Similarly trim trailing "0m" only when preceded by a letter.
+	if len(s) >= 3 && strings.HasSuffix(s, "0m") {
+		prev := s[len(s)-3]
+		if prev >= 'a' && prev <= 'z' {
+			s = s[:len(s)-2]
+		}
+	}
+	if s == "" {
+		return "0s"
+	}
+	return s
 }
 
 func formatMetricValue(value interface{}) string {
