@@ -194,6 +194,10 @@ func run(args []string) error {
 			Method:      cfg.Method,
 			ConfigFile:  cfg.ConfigFile,
 		}
+		patternName, patternSteps, patternTotal := buildDashPatternSteps(cfg.LoadPatterns)
+		dashCfg.LoadPatternName = patternName
+		dashCfg.LoadPatternSteps = patternSteps
+		dashCfg.LoadPatternTotal = patternTotal
 		dash, err = dashboard.New(collector, dashCfg, cancel)
 		if err != nil {
 			return err
@@ -436,4 +440,71 @@ func (j *jitterSource) jitter(max time.Duration) time.Duration {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	return time.Duration(j.rnd.Int63n(int64(max)))
+}
+
+// buildDashPatternSteps converts config load patterns into dashboard display segments.
+// It returns the display name, ordered step list, and total scheduled duration.
+func buildDashPatternSteps(patterns []config.LoadPattern) (string, []dashboard.PatternStep, time.Duration) {
+	if len(patterns) == 0 {
+		return "", nil, 0
+	}
+	var steps []dashboard.PatternStep
+	var names []string
+	var offset time.Duration
+
+	for _, p := range patterns {
+		if p.Name != "" {
+			names = append(names, p.Name)
+		}
+		switch p.Type {
+		case config.LoadPatternTypeStep:
+			for _, s := range p.Steps {
+				if s.Duration <= 0 {
+					continue
+				}
+				steps = append(steps, dashboard.PatternStep{
+					Label:    fmt.Sprintf("%d RPS", s.RPS),
+					Duration: s.Duration,
+					Start:    offset,
+				})
+				offset += s.Duration
+			}
+		case config.LoadPatternTypeRamp:
+			if p.Duration <= 0 {
+				continue
+			}
+			steps = append(steps, dashboard.PatternStep{
+				Label:    fmt.Sprintf("%d→%d RPS", p.FromRPS, p.ToRPS),
+				Duration: p.Duration,
+				Start:    offset,
+			})
+			offset += p.Duration
+		case config.LoadPatternTypeSpike:
+			if p.Duration <= 0 {
+				continue
+			}
+			steps = append(steps, dashboard.PatternStep{
+				Label:    fmt.Sprintf("Spike %d RPS", p.RPS),
+				Duration: p.Duration,
+				Start:    offset,
+			})
+			offset += p.Duration
+		case config.LoadPatternTypeConstant:
+			if p.Duration <= 0 {
+				continue
+			}
+			steps = append(steps, dashboard.PatternStep{
+				Label:    fmt.Sprintf("%d RPS", p.RPS),
+				Duration: p.Duration,
+				Start:    offset,
+			})
+			offset += p.Duration
+		}
+	}
+
+	name := strings.Join(names, ", ")
+	if name == "" && len(steps) > 0 {
+		name = "pattern"
+	}
+	return name, steps, offset
 }

@@ -9,6 +9,125 @@ import (
 	"github.com/torosent/crankfire/internal/metrics"
 )
 
+func TestFormatPatternDuration(t *testing.T) {
+	tests := []struct {
+		name     string
+		d        time.Duration
+		expected string
+	}{
+		{"zero", 0, "0s"},
+		{"seconds", 20 * time.Second, "20s"},
+		{"minutes only", 60 * time.Second, "1m"},
+		{"minutes and seconds", 7*time.Minute + 50*time.Second, "7m50s"},
+		{"whole hours", 2 * time.Hour, "2h"},
+		{"mixed", 1*time.Minute + 30*time.Second, "1m30s"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatPatternDuration(tt.d)
+			if got != tt.expected {
+				t.Errorf("formatPatternDuration(%v) = %q, want %q", tt.d, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestUpdateLoadPattern(t *testing.T) {
+	makeStep := func(label string, rps int, dur time.Duration, start time.Duration) PatternStep {
+		_ = rps // label encodes this already
+		return PatternStep{Label: label, Duration: dur, Start: start}
+	}
+
+	steps := []PatternStep{
+		makeStep("10 RPS", 10, 20*time.Second, 0),
+		makeStep("50 RPS", 50, 50*time.Second, 20*time.Second),
+		makeStep("100 RPS", 100, 60*time.Second, 70*time.Second),
+	}
+	total := 130 * time.Second
+
+	tests := []struct {
+		name          string
+		elapsed       time.Duration
+		wantInTitle   string
+		wantCurrent   string
+		wantCompleted string
+		wantPending   string
+	}{
+		{
+			name:        "at start – first step active",
+			elapsed:     5 * time.Second,
+			wantInTitle: "Load Pattern: step-up",
+			wantCurrent: "► 10 RPS",
+			wantPending: "· 50 RPS",
+		},
+		{
+			name:          "second step active",
+			elapsed:       30 * time.Second,
+			wantCurrent:   "► 50 RPS",
+			wantCompleted: "✓ 10 RPS",
+			wantPending:   "· 100 RPS",
+		},
+		{
+			name:          "after all steps",
+			elapsed:       200 * time.Second,
+			wantCompleted: "✓ 10 RPS",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := &Dashboard{
+				protocolPara: widgets.NewParagraph(),
+				testConfig: TestConfig{
+					LoadPatternName:  "step-up",
+					LoadPatternSteps: steps,
+					LoadPatternTotal: total,
+				},
+			}
+			d.updateLoadPattern(tt.elapsed)
+
+			if tt.wantInTitle != "" && !strings.Contains(d.protocolPara.Title, tt.wantInTitle) {
+				t.Errorf("title %q does not contain %q", d.protocolPara.Title, tt.wantInTitle)
+			}
+			if tt.wantCurrent != "" && !strings.Contains(d.protocolPara.Text, tt.wantCurrent) {
+				t.Errorf("text %q does not contain current marker %q", d.protocolPara.Text, tt.wantCurrent)
+			}
+			if tt.wantCompleted != "" && !strings.Contains(d.protocolPara.Text, tt.wantCompleted) {
+				t.Errorf("text %q does not contain completed marker %q", d.protocolPara.Text, tt.wantCompleted)
+			}
+			if tt.wantPending != "" && !strings.Contains(d.protocolPara.Text, tt.wantPending) {
+				t.Errorf("text %q does not contain pending marker %q", d.protocolPara.Text, tt.wantPending)
+			}
+			// Progress bar should always be present (bar characters or percentage).
+			if !strings.Contains(d.protocolPara.Text, "%") {
+				t.Error("expected progress percentage in text")
+			}
+		})
+	}
+}
+
+func TestTestConfigLoadPatternFields(t *testing.T) {
+	// Verify that TestConfig correctly propagates LoadPatternSteps and LoadPatternTotal.
+	steps := []PatternStep{
+		{Label: "10 RPS", Duration: 20 * time.Second, Start: 0},
+		{Label: "50 RPS", Duration: 50 * time.Second, Start: 20 * time.Second},
+	}
+	cfg := TestConfig{
+		LoadPatternName:  "my-pattern",
+		LoadPatternSteps: steps,
+		LoadPatternTotal: 70 * time.Second,
+	}
+	if cfg.LoadPatternTotal != 70*time.Second {
+		t.Errorf("LoadPatternTotal = %v, want 70s", cfg.LoadPatternTotal)
+	}
+	if len(cfg.LoadPatternSteps) != 2 {
+		t.Errorf("LoadPatternSteps len = %d, want 2", len(cfg.LoadPatternSteps))
+	}
+	if cfg.LoadPatternSteps[1].Start != 20*time.Second {
+		t.Errorf("step[1].Start = %v, want 20s", cfg.LoadPatternSteps[1].Start)
+	}
+}
+
 func TestFormatMetricValue(t *testing.T) {
 	tests := []struct {
 		name     string
