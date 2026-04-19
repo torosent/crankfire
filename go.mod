@@ -4,9 +4,12 @@ go 1.25.0
 
 require (
 	github.com/HdrHistogram/hdrhistogram-go v1.2.0
+	github.com/charmbracelet/bubbles v1.0.0
+	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/gizak/termui/v3 v3.1.0
 	github.com/gofrs/flock v0.13.0
 	github.com/gorilla/websocket v1.5.3
+	github.com/hinshun/vt10x v0.0.0-20220301184237-5011da428d02
 	github.com/jhump/protoreflect v1.18.0
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/spf13/cobra v1.10.2
@@ -29,8 +32,6 @@ require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/charmbracelet/bubbles v1.0.0 // indirect
-	github.com/charmbracelet/bubbletea v1.3.10 // indirect
 	github.com/charmbracelet/colorprofile v0.4.1 // indirect
 	github.com/charmbracelet/lipgloss v1.1.0 // indirect
 	github.com/charmbracelet/x/ansi v0.11.6 // indirect
