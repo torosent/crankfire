@@ -1044,3 +1044,42 @@ func loadHAREndpoints(cfg *Config) error {
 
 	return nil
 }
+
+// LoadFromFile loads a Config from a YAML or JSON file.
+func LoadFromFile(path string) (*Config, error) {
+	cfgViper := viper.New()
+	cfgViper.SetConfigFile(path)
+	if err := cfgViper.ReadInConfig(); err != nil {
+		return nil, fmt.Errorf("read config file: %w", err)
+	}
+
+	settings := cfgViper.AllSettings()
+
+	cfg := &Config{
+		Method:           "GET",
+		Headers:          map[string]string{},
+		Concurrency:      1,
+		Timeout:          30 * time.Second,
+		GracefulShutdown: 5 * time.Second,
+		ConfigFile:       path,
+		Arrival:          ArrivalConfig{Model: ArrivalModelUniform},
+	}
+
+	if err := applyConfigSettings(cfg, settings); err != nil {
+		return nil, err
+	}
+
+	cfg.Method = strings.ToUpper(cfg.Method)
+	cfg.TargetURL = strings.TrimSpace(cfg.TargetURL)
+	cfg.BodyFile = strings.TrimSpace(cfg.BodyFile)
+
+	if cfg.Headers == nil {
+		cfg.Headers = map[string]string{}
+	}
+
+	if err := loadHAREndpoints(cfg); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}

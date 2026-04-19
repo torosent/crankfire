@@ -13,6 +13,7 @@ import (
 
 	"github.com/gofrs/flock"
 	"github.com/oklog/ulid/v2"
+	"github.com/torosent/crankfire/internal/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -94,7 +95,15 @@ func (s *fsStore) DeleteSession(ctx context.Context, id string) error {
 }
 
 func (s *fsStore) ImportSessionFromConfigFile(ctx context.Context, path, name string) (Session, error) {
-	return Session{}, fmt.Errorf("not implemented") // Task 5
+	cfg, err := config.LoadFromFile(path)
+	if err != nil {
+		return Session{}, fmt.Errorf("load %s: %w: %w", path, ErrInvalidConfig, err)
+	}
+	sess := Session{Name: name, Config: *cfg}
+	if err := s.SaveSession(ctx, sess); err != nil {
+		return Session{}, err
+	}
+	return sess, nil
 }
 func (s *fsStore) ListRuns(ctx context.Context, sessionID string) ([]Run, error) {
 	return nil, fmt.Errorf("not implemented") // Task 6
