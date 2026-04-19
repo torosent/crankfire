@@ -49,6 +49,24 @@ func (l List) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if l.cursor < len(l.sessions)-1 {
 				l.cursor++
 			}
+		case "enter":
+			if len(l.sessions) > 0 {
+				return l, func() tea.Msg {
+					return PushMsg{NewDetail(l.store, l.sessions[l.cursor])}
+				}
+			}
+		case "d":
+			if len(l.sessions) > 0 {
+				id := l.sessions[l.cursor].ID
+				onYes := func() {
+					ctx := context.Background()
+					_ = l.store.DeleteSession(ctx, id)
+				}
+				confirm := NewConfirm("Delete session?", onYes)
+				return l, func() tea.Msg {
+					return PushMsg{confirm}
+				}
+			}
 		}
 	}
 	return l, nil
