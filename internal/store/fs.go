@@ -3,6 +3,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -105,14 +106,70 @@ func (s *fsStore) ImportSessionFromConfigFile(ctx context.Context, path, name st
 	}
 	return sess, nil
 }
-func (s *fsStore) ListRuns(ctx context.Context, sessionID string) ([]Run, error) {
-	return nil, fmt.Errorf("not implemented") // Task 6
-}
 func (s *fsStore) CreateRun(ctx context.Context, sessionID string) (Run, error) {
-	return Run{}, fmt.Errorf("not implemented") // Task 6
+	if _, err := s.GetSession(ctx, sessionID); err != nil {
+		return Run{}, err
+	}
+	started := time.Now().UTC()
+	dir := runDir(s.dir, sessionID, started.Format(time.RFC3339Nano))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return Run{}, fmt.Errorf("mkdir run dir: %w", err)
+	}
+	run := Run{SessionID: sessionID, StartedAt: started, Status: RunStatusRunning, Dir: dir}
+	if err := s.writeRunMeta(run); err != nil {
+		return Run{}, err
+	}
+	return run, nil
 }
+
 func (s *fsStore) FinalizeRun(ctx context.Context, run Run, summary RunSummary) error {
-	return fmt.Errorf("not implemented") // Task 6
+	run.EndedAt = time.Now().UTC()
+	if run.Status == "" || run.Status == RunStatusRunning {
+		run.Status = RunStatusCompleted
+	}
+	if summary.ErrorMessage != "" && run.Status == RunStatusCompleted {
+		run.Status = RunStatusFailed
+	}
+	run.Summary = summary
+	return s.writeRunMeta(run)
 }
+
+func (s *fsStore) writeRunMeta(run Run) error {
+	data, err := json.MarshalIndent(run, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal run: %w", err)
+	}
+	return writeAtomic(filepath.Join(run.Dir, "run.json"), data)
+}
+
+func (s *fsStore) ListRuns(ctx context.Context, sessionID string) ([]Run, error) {
+	base := filepath.Join(runsDir(s.dir), sessionID)
+	entries, err := os.ReadDir(base)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read runs dir: %w", err)
+	}
+	var out []Run
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		meta, err := os.ReadFile(filepath.Join(base, e.Name(), "run.json"))
+		if err != nil {
+			continue
+		}
+		var r Run
+		if err := json.Unmarshal(meta, &r); err != nil {
+			continue
+		}
+		r.Dir = filepath.Join(base, e.Name())
+		out = append(out, r)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].StartedAt.After(out[j].StartedAt) })
+	return out, nil
+}
+
 
 var _ = filepath.Join // keep imports tidy across tasks
