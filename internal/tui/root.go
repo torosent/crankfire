@@ -3,6 +3,7 @@ package tui
 import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/torosent/crankfire/internal/store"
+	"github.com/torosent/crankfire/internal/tui/screens"
 )
 
 type Root struct {
@@ -11,7 +12,7 @@ type Root struct {
 }
 
 func NewRoot(s store.Store) Root {
-	return Root{store: s, stack: []tea.Model{placeholder{title: "Sessions"}}}
+	return Root{store: s, stack: []tea.Model{screens.NewList(s)}}
 }
 
 func (r Root) Init() tea.Cmd { return r.stack[len(r.stack)-1].Init() }
@@ -29,9 +30,3 @@ func (r Root) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (r Root) View() string { return r.stack[len(r.stack)-1].View() }
-
-type placeholder struct{ title string }
-
-func (p placeholder) Init() tea.Cmd { return nil }
-func (p placeholder) Update(msg tea.Msg) (tea.Model, tea.Cmd) { return p, nil }
-func (p placeholder) View() string { return p.title + "\n\n[q] quit" }
