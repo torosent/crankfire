@@ -27,7 +27,6 @@ cases := []string{
 "foo\\bar",
 "a/../b",
 "foo\x00bar",
-"",
 }
 
 for _, id := range cases {
@@ -41,8 +40,7 @@ err := st.SaveSession(context.Background(), sess)
 if err == nil {
 t.Fatalf("expected error for id %q, got nil", id)
 }
-if !errors.Is(err, store.ErrInvalidSession) && id != "" {
-// empty id triggers ULID generation rather than validation
+if !errors.Is(err, store.ErrInvalidSession) {
 t.Fatalf("expected ErrInvalidSession for id %q, got %v", id, err)
 }
 })

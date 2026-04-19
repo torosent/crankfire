@@ -21,7 +21,13 @@ import (
 type fsStore struct{ dir string }
 
 func NewFS(dataDir string) (Store, error) {
-	for _, d := range []string{dataDir, sessionsDir(dataDir), runsDir(dataDir)} {
+	for _, d := range []string{
+		dataDir,
+		sessionsDir(dataDir),
+		runsDir(dataDir),
+		setsDir(dataDir),
+		setRunsDir(dataDir),
+	} {
 		if err := os.MkdirAll(d, 0o755); err != nil {
 			return nil, fmt.Errorf("mkdir %s: %w", d, err)
 		}

@@ -526,6 +526,10 @@ Key bindings:
 
 See [TUI Guide](docs/tui.md) for a detailed walkthrough.
 
+## Sets of Load Tests
+
+Group multiple sessions into stages with thresholds and run them as a suite. See [docs/sets.md](docs/sets.md).
+
 ## Responsible Use and Legal Notice
 
 ⚠️ **IMPORTANT**: Crankfire is a powerful load testing tool that can generate significant traffic against target systems.

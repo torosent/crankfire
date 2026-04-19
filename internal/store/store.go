@@ -59,4 +59,13 @@ type Store interface {
 	ListRuns(ctx context.Context, sessionID string) ([]Run, error)
 	CreateRun(ctx context.Context, sessionID string) (Run, error)
 	FinalizeRun(ctx context.Context, run Run, summary RunSummary) error
+
+	ListSets(ctx context.Context) ([]Set, error)
+	GetSet(ctx context.Context, id string) (Set, error)
+	SaveSet(ctx context.Context, s Set) error
+	DeleteSet(ctx context.Context, id string) error
+
+	ListSetRuns(ctx context.Context, setID string) ([]SetRun, error)
+	CreateSetRun(ctx context.Context, setID string) (SetRun, error)
+	FinalizeSetRun(ctx context.Context, run SetRun) error
 }

@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Set Run — auth-regression</title>
+<style>
+body{font-family:-apple-system,Segoe UI,sans-serif;margin:2rem;color:#222;}
+h1{margin-bottom:.2rem;}
+.meta{color:#666;margin-bottom:1.5rem;}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:.85rem;font-weight:600;}
+.badge.completed{background:#d4edda;color:#155724;}
+.badge.failed{background:#f8d7da;color:#721c24;}
+.badge.cancelled{background:#fff3cd;color:#856404;}
+.stage{margin:1.5rem 0;border:1px solid #e0e0e0;border-radius:6px;padding:1rem;}
+.item{padding:.5rem;border-bottom:1px solid #f0f0f0;}
+.item:last-child{border-bottom:none;}
+table{border-collapse:collapse;width:100%;margin-top:1rem;}
+th,td{padding:.5rem .75rem;border:1px solid #e0e0e0;text-align:right;}
+th:first-child,td:first-child{text-align:left;}
+th{background:#f7f7f7;}
+.winner{background:#d4edda;font-weight:600;}
+.threshold{padding:.5rem;}
+.threshold.passed{color:#155724;}
+.threshold.failed{color:#721c24;font-weight:600;}
+</style>
+</head>
+<body>
+<h1>auth-regression <span class="badge completed">completed</span></h1>
+<div class="meta">
+  Started 2026-04-19 10:00:00 UTC · Duration 5m0s
+</div>
+
+<h2>Thresholds</h2>
+
+<ul>
+  
+  <li class="threshold passed">
+    aggregate: p95 lt 500 → actual 300.000 ✓
+  </li>
+  
+</ul>
+
+
+<h2>Stages</h2>
+
+<div class="stage">
+  <h3>warmup</h3>
+  
+  <div class="item">
+    <strong>warm</strong>
+    <span class="badge completed">completed</span>
+    — p50 80ms,
+      p95 200ms,
+      p99 400ms,
+      RPS 50.0,
+      err 0.00%
+    
+  </div>
+  
+</div>
+
+<div class="stage">
+  <h3>load</h3>
+  
+  <div class="item">
+    <strong>login</strong>
+    <span class="badge completed">completed</span>
+    — p50 100ms,
+      p95 250ms,
+      p99 500ms,
+      RPS 100.0,
+      err 0.00%
+    
+  </div>
+  
+  <div class="item">
+    <strong>search</strong>
+    <span class="badge completed">completed</span>
+    — p50 150ms,
+      p95 300ms,
+      p99 600ms,
+      RPS 80.0,
+      err 0.03%
+    
+  </div>
+  
+</div>
+
+
+<h2>Compare</h2>
+<table class="compare-table">
+  <thead><tr><th>Metric</th><th>warm</th><th>login</th><th>search</th></tr></thead>
+  <tbody>
+  
+  <tr>
+    <td>p50</td>
+    
+    
+      
+      <td class="winner winner-warm">80.00</td>
+    
+      
+      <td class="">100.00</td>
+    
+      
+      <td class="">150.00</td>
+    
+  </tr>
+  
+  <tr>
+    <td>p95</td>
+    
+    
+      
+      <td class="winner winner-warm">200.00</td>
+    
+      
+      <td class="">250.00</td>
+    
+      
+      <td class="">300.00</td>
+    
+  </tr>
+  
+  <tr>
+    <td>p99</td>
+    
+    
+      
+      <td class="winner winner-warm">400.00</td>
+    
+      
+      <td class="">500.00</td>
+    
+      
+      <td class="">600.00</td>
+    
+  </tr>
+  
+  <tr>
+    <td>error_rate</td>
+    
+    
+      
+      <td class="winner winner-warm">0.00</td>
+    
+      
+      <td class="">0.00</td>
+    
+      
+      <td class="">0.03</td>
+    
+  </tr>
+  
+  <tr>
+    <td>total_errors</td>
+    
+    
+      
+      <td class="winner winner-warm">0.00</td>
+    
+      
+      <td class="">0.00</td>
+    
+      
+      <td class="">2.00</td>
+    
+  </tr>
+  
+  <tr>
+    <td>rps</td>
+    
+    
+      
+      <td class="">50.00</td>
+    
+      
+      <td class="winner winner-login">100.00</td>
+    
+      
+      <td class="">80.00</td>
+    
+  </tr>
+  
+  </tbody>
+</table>
+</body>
+</html>
