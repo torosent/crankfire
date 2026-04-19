@@ -24,6 +24,10 @@ func (d Detail) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return d, func() tea.Msg {
 				return PushMsg{NewRun(d.store, d.sess)}
 			}
+		case "h":
+			return d, func() tea.Msg {
+				return PushMsg{NewHistory(d.store, d.sess.ID)}
+			}
 		}
 	}
 	return d, nil

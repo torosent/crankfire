@@ -77,6 +77,12 @@ func (l List) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return PushMsg{NewRun(l.store, sel)}
 				}
 			}
+		case "h":
+			if len(l.sessions) > 0 {
+				return l, func() tea.Msg {
+					return PushMsg{NewHistory(l.store, l.sessions[l.cursor].ID)}
+				}
+			}
 		case "d":
 			if len(l.sessions) > 0 {
 				id := l.sessions[l.cursor].ID
