@@ -20,6 +20,10 @@ func (d Detail) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch k.String() {
 		case "esc":
 			return d, popCmd
+		case "r":
+			return d, func() tea.Msg {
+				return PushMsg{NewRun(d.store, d.sess)}
+			}
 		}
 	}
 	return d, nil

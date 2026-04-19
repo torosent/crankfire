@@ -18,7 +18,6 @@ import (
 	"github.com/torosent/crankfire/internal/output"
 	"github.com/torosent/crankfire/internal/runner"
 	"github.com/torosent/crankfire/internal/threshold"
-	"github.com/torosent/crankfire/internal/tui"
 )
 
 const (
@@ -43,22 +42,6 @@ type jitterSource struct {
 // Run executes the crankfire CLI with the given argument slice (typically
 // os.Args[1:]). It returns nil on success and an error otherwise.
 func Run(args []string) error {
-	if len(args) >= 1 && args[0] == "tui" {
-		var dataDir string
-		rest := args[1:]
-		for i := 0; i < len(rest); i++ {
-			switch rest[i] {
-			case "--data-dir":
-				if i+1 >= len(rest) {
-					return fmt.Errorf("--data-dir requires a value")
-				}
-				dataDir = rest[i+1]
-				i++
-			}
-		}
-		return tui.Run(tui.Options{DataDir: dataDir})
-	}
-
 	loader := config.NewLoader()
 	cfg, err := loader.Load(args)
 	if err != nil {
