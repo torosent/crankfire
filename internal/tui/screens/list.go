@@ -95,6 +95,10 @@ func (l List) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return PushMsg{confirm}
 				}
 			}
+		case "s":
+			return l, func() tea.Msg {
+				return PushMsg{NewSetsList(context.Background(), l.store)}
+			}
 		}
 	}
 	return l, nil
@@ -116,6 +120,6 @@ func (l List) View() string {
 		}
 		fmt.Fprintf(&b, "%s%s\n", prefix, s.Name)
 	}
-	b.WriteString("\n[n] new  [e] edit  [d] delete  [i] import  [r] run  [h] history  [Enter] details  [q] quit\n")
+	b.WriteString("\n[n] new  [e] edit  [d] delete  [i] import  [r] run  [h] history  [s] sets  [Enter] details  [q] quit\n")
 	return b.String()
 }

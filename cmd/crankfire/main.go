@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"os"
 
+	"context"
+
 	"github.com/torosent/crankfire/internal/cli"
+	"github.com/torosent/crankfire/internal/store"
 	"github.com/torosent/crankfire/internal/tui"
 )
 
@@ -28,6 +31,19 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	}
+	if len(args) >= 1 && args[0] == "set" {
+		dir, err := store.ResolveDataDir("")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "data dir: %v\n", err)
+			os.Exit(cli.ExitRunnerError)
+		}
+		st, err := store.NewFS(dir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "store: %v\n", err)
+			os.Exit(cli.ExitRunnerError)
+		}
+		os.Exit(cli.RunSet(context.Background(), st, args[1:], os.Stdout, os.Stderr))
 	}
 	if err := cli.Run(args); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
