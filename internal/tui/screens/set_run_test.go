@@ -44,6 +44,7 @@ func TestSetRunRendersStageAndItem(t *testing.T) {
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 
 	sr := m.(*screens.SetRun)
+	t.Cleanup(sr.WaitForTest)
 	sr.IngestForTest(setrunner.Event{Kind: setrunner.EventSetStarted})
 	sr.IngestForTest(setrunner.Event{Kind: setrunner.EventStageStarted, Stage: "s1"})
 	sr.IngestForTest(setrunner.Event{Kind: setrunner.EventItemStarted, Stage: "s1", Item: "i"})
@@ -75,6 +76,7 @@ func TestSetRunQCancelsAndNavigatesBack(t *testing.T) {
 
 	m := screens.NewSetRun(context.Background(), st, fakeBuilder{}, list[0].ID)
 	m.Init()
+	t.Cleanup(func() { m.(*screens.SetRun).WaitForTest() })
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 
 	// After q we should be on a different screen (SetsDetail).

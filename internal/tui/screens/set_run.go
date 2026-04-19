@@ -128,6 +128,10 @@ func (m *SetRun) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // goroutine. This lets unit tests verify rendering without running a real runner.
 func (m *SetRun) IngestForTest(ev setrunner.Event) { m.applyEvent(ev) }
 
+// WaitForTest blocks until the runner goroutine has fully exited. Test-only
+// helper so tempdir cleanup doesn't race with background writes.
+func (m *SetRun) WaitForTest() { <-m.doneCh }
+
 func (m *SetRun) applyEvent(ev setrunner.Event) {
 	switch ev.Kind {
 	case setrunner.EventStageStarted:
