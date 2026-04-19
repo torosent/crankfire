@@ -33,6 +33,29 @@ func newULID() string {
 	return ulid.MustNew(ulid.Timestamp(time.Now()), ulid.DefaultEntropy()).String()
 }
 
+// validateID rejects IDs that could escape the data directory or otherwise
+// produce unintended file paths. Session IDs are normally ULIDs but may also
+// flow in from user-edited YAML, so all callers that derive a path from an
+// ID must validate first.
+func validateID(id string) error {
+	if id == "" {
+		return fmt.Errorf("%w: empty id", ErrInvalidSession)
+	}
+	if id == "." || id == ".." {
+		return fmt.Errorf("%w: id %q is not allowed", ErrInvalidSession, id)
+	}
+	if strings.ContainsAny(id, "/\\") || strings.Contains(id, "..") {
+		return fmt.Errorf("%w: id %q contains path separators or traversal", ErrInvalidSession, id)
+	}
+	if strings.ContainsAny(id, "\x00\n\r") {
+		return fmt.Errorf("%w: id %q contains control characters", ErrInvalidSession, id)
+	}
+	if id != filepath.Base(id) {
+		return fmt.Errorf("%w: id %q must be a single path segment", ErrInvalidSession, id)
+	}
+	return nil
+}
+
 func writeAtomic(path string, data []byte) error {
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
@@ -61,6 +84,9 @@ func (s *fsStore) ListSessions(ctx context.Context) ([]Session, error) {
 }
 
 func (s *fsStore) GetSession(ctx context.Context, id string) (Session, error) {
+	if err := validateID(id); err != nil {
+		return Session{}, err
+	}
 	data, err := os.ReadFile(sessionPath(s.dir, id))
 	if errors.Is(err, os.ErrNotExist) { return Session{}, ErrNotFound }
 	if err != nil { return Session{}, fmt.Errorf("read session %s: %w", id, err) }
@@ -72,7 +98,11 @@ func (s *fsStore) GetSession(ctx context.Context, id string) (Session, error) {
 }
 
 func (s *fsStore) SaveSession(ctx context.Context, sess Session) error {
-	if sess.ID == "" { sess.ID = newULID() }
+	if sess.ID == "" {
+		sess.ID = newULID()
+	} else if err := validateID(sess.ID); err != nil {
+		return err
+	}
 	if sess.SchemaVersion == 0 { sess.SchemaVersion = SchemaVersion }
 	if sess.CreatedAt.IsZero() { sess.CreatedAt = time.Now().UTC() }
 	sess.UpdatedAt = time.Now().UTC()
@@ -88,6 +118,9 @@ func (s *fsStore) SaveSession(ctx context.Context, sess Session) error {
 }
 
 func (s *fsStore) DeleteSession(ctx context.Context, id string) error {
+	if err := validateID(id); err != nil {
+		return err
+	}
 	err := os.Remove(sessionPath(s.dir, id))
 	if errors.Is(err, os.ErrNotExist) { return ErrNotFound }
 	if err != nil { return fmt.Errorf("delete session %s: %w", id, err) }
@@ -107,6 +140,9 @@ func (s *fsStore) ImportSessionFromConfigFile(ctx context.Context, path, name st
 	return sess, nil
 }
 func (s *fsStore) CreateRun(ctx context.Context, sessionID string) (Run, error) {
+	if err := validateID(sessionID); err != nil {
+		return Run{}, err
+	}
 	if _, err := s.GetSession(ctx, sessionID); err != nil {
 		return Run{}, err
 	}
@@ -143,6 +179,9 @@ func (s *fsStore) writeRunMeta(run Run) error {
 }
 
 func (s *fsStore) ListRuns(ctx context.Context, sessionID string) ([]Run, error) {
+	if err := validateID(sessionID); err != nil {
+		return nil, err
+	}
 	base := filepath.Join(runsDir(s.dir), sessionID)
 	entries, err := os.ReadDir(base)
 	if errors.Is(err, os.ErrNotExist) {

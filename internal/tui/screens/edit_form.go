@@ -278,6 +278,10 @@ func (e Edit) saveFromYAML() (tea.Model, tea.Cmd) {
 		return e, nil
 	}
 
+	// The session ID is owned by the store and must not be redefinable from
+	// user-supplied YAML; otherwise a malicious id could escape the data dir.
+	sess.ID = e.sess.ID
+
 	if sess.Name == "" {
 		e.err = errors.New("name is required")
 		return e, nil
