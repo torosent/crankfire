@@ -3,6 +3,9 @@ package store_test
 
 import (
 	"context"
+	"errors"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -74,5 +77,53 @@ func TestFSSessionsAtomicAndLocked(t *testing.T) {
 	}
 	for i := 0; i < 2; i++ {
 		if err := <-done; err != nil { t.Fatal(err) }
+	}
+}
+
+func TestSaveSessionDedupesAndSortsTags(t *testing.T) {
+	dir := t.TempDir()
+	st, err := store.NewFS(dir)
+	if err != nil {
+		t.Fatalf("NewFS: %v", err)
+	}
+	ctx := context.Background()
+	sess := store.Session{Name: "n", Tags: []string{"prod", "smoke", "prod", "alpha"}}
+	if err := st.SaveSession(ctx, sess); err != nil {
+		t.Fatalf("SaveSession: %v", err)
+	}
+	got, err := st.ListSessions(ctx)
+	if err != nil {
+		t.Fatalf("ListSessions: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want 1 session, got %d", len(got))
+	}
+	want := []string{"alpha", "prod", "smoke"}
+	if !reflect.DeepEqual(got[0].Tags, want) {
+		t.Errorf("Tags = %v, want %v", got[0].Tags, want)
+	}
+}
+
+func TestSaveSessionRejectsInvalidTag(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := store.NewFS(dir)
+	ctx := context.Background()
+	tests := []struct {
+		name string
+		tag  string
+	}{
+		{"empty", ""},
+		{"contains space", "has space"},
+		{"contains slash", "a/b"},
+		{"too long", strings.Repeat("a", 65)},
+		{"unicode", "naïve"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := st.SaveSession(ctx, store.Session{Name: "n", Tags: []string{tc.tag}})
+			if !errors.Is(err, store.ErrInvalidTag) {
+				t.Errorf("err = %v, want ErrInvalidTag", err)
+			}
+		})
 	}
 }

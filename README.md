@@ -183,6 +183,8 @@ See the [Getting Started guide](https://torosent.github.io/crankfire/getting-sta
 | `--tracing-sample-rate` | Trace sampling rate (0.0 to 1.0) | 1.0 |
 | `--tracing-insecure` | Skip TLS for OTLP exporter connection | false |
 
+**Trace backends** — see [`docs/tracing-backends.md`](docs/tracing-backends.md) for copy-paste configs (Tempo, Jaeger, Honeycomb, OTLP collector, local Docker).
+
 For a complete CLI reference and configuration guide, see [Configuration & CLI Reference](https://torosent.github.io/crankfire/configuration.html).
 
 ## Thresholds (CI/CD Integration)

@@ -32,6 +32,40 @@ func main() {
 		}
 		return
 	}
+	if len(args) >= 1 && args[0] == "daemon" {
+		var dataDirFlag string
+		rest := args[1:]
+		for i := 0; i < len(rest); i++ {
+			if rest[i] == "--data-dir" && i+1 < len(rest) {
+				dataDirFlag = rest[i+1]
+				i++
+			}
+		}
+		dir, err := store.ResolveDataDir(dataDirFlag)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "data dir: %v\n", err)
+			os.Exit(cli.ExitRunnerError)
+		}
+		st, err := store.NewFS(dir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "store: %v\n", err)
+			os.Exit(cli.ExitRunnerError)
+		}
+		os.Exit(cli.RunDaemon(context.Background(), st, dir, rest, os.Stdout, os.Stderr))
+	}
+	if len(args) >= 1 && args[0] == "session" {
+		dir, err := store.ResolveDataDir("")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "data dir: %v\n", err)
+			os.Exit(cli.ExitRunnerError)
+		}
+		st, err := store.NewFS(dir)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "store: %v\n", err)
+			os.Exit(cli.ExitRunnerError)
+		}
+		os.Exit(cli.RunSession(context.Background(), st, args[1:], os.Stdout, os.Stderr))
+	}
 	if len(args) >= 1 && args[0] == "set" {
 		dir, err := store.ResolveDataDir("")
 		if err != nil {

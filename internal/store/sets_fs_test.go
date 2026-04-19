@@ -196,3 +196,108 @@ func TestSetRunLifecycle(t *testing.T) {
 		t.Errorf("Dir not absolute: %q", runs[0].Dir)
 	}
 }
+
+func TestTemplateRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := store.NewFS(dir)
+	ctx := context.Background()
+	body := []byte(`template: true
+name: api-baseline
+description: baseline rate
+stages:
+- name: smoke
+  items: []
+`)
+	if err := st.SaveTemplate(ctx, "api-baseline", body); err != nil {
+		t.Fatalf("SaveTemplate: %v", err)
+	}
+	ids, err := st.ListTemplates(ctx)
+	if err != nil {
+		t.Fatalf("ListTemplates: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != "api-baseline" {
+		t.Errorf("ids = %v, want [api-baseline]", ids)
+	}
+	got, err := st.GetTemplate(ctx, "api-baseline")
+	if err != nil {
+		t.Fatalf("GetTemplate: %v", err)
+	}
+	if string(got) != string(body) {
+		t.Errorf("body roundtrip mismatch:\ngot:\n%s\nwant:\n%s", got, body)
+	}
+	if err := st.DeleteTemplate(ctx, "api-baseline"); err != nil {
+		t.Fatalf("DeleteTemplate: %v", err)
+	}
+	if _, err := st.GetTemplate(ctx, "api-baseline"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("after delete err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestSaveTemplateRequiresMarker(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := store.NewFS(dir)
+	ctx := context.Background()
+	body := []byte(`name: missing-marker
+stages: []
+`)
+	err := st.SaveTemplate(ctx, "x", body)
+	if !errors.Is(err, store.ErrInvalidTemplate) {
+		t.Errorf("err = %v, want ErrInvalidTemplate", err)
+	}
+}
+
+func TestSaveSetRejectsTemplateMarker(t *testing.T) {
+	dir := t.TempDir()
+	st, _ := store.NewFS(dir)
+	ctx := context.Background()
+	_ = st.SaveTemplate(ctx, "x", []byte("template: true\nname: x\nstages: []\n"))
+	sets, _ := st.ListSets(ctx)
+	for _, s := range sets {
+		if s.ID == "x" {
+			t.Error("template should not appear in ListSets")
+		}
+	}
+}
+
+func TestSaveSetAcceptsValidSchedule(t *testing.T) {
+	st, sess := newStoreWithSession(t)
+	ctx := context.Background()
+	cases := []string{"@daily", "@hourly", "0 2 * * *", "*/5 * * * *"}
+	for _, expr := range cases {
+		t.Run(expr, func(t *testing.T) {
+			set := store.Set{
+				Name:     "n",
+				Schedule: expr,
+				Stages: []store.Stage{{
+					Name: "s",
+					Items: []store.SetItem{{SessionID: sess.ID}},
+				}},
+			}
+			if err := st.SaveSet(ctx, set); err != nil {
+				t.Errorf("SaveSet(%s): %v", expr, err)
+			}
+		})
+	}
+}
+
+func TestSaveSetRejectsInvalidSchedule(t *testing.T) {
+	st, sess := newStoreWithSession(t)
+	ctx := context.Background()
+	cases := []string{"not-a-cron", "* * *", "60 * * * *", "@badmacro"}
+	for _, expr := range cases {
+		t.Run(expr, func(t *testing.T) {
+			set := store.Set{
+				Name:     "n",
+				Schedule: expr,
+				Stages: []store.Stage{{
+					Name: "s",
+					Items: []store.SetItem{{SessionID: sess.ID}},
+				}},
+			}
+			err := st.SaveSet(ctx, set)
+			if !errors.Is(err, store.ErrInvalidSchedule) {
+				t.Errorf("err = %v, want ErrInvalidSchedule", err)
+			}
+		})
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
+	cron "github.com/robfig/cron/v3"
 	"gopkg.in/yaml.v3"
 )
 
@@ -70,6 +71,13 @@ func (s *fsStore) SaveSet(ctx context.Context, set Set) error {
 	}
 	set.UpdatedAt = now
 	set.SchemaVersion = SchemaVersion
+
+	if set.Schedule != "" {
+		parser := cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+		if _, err := parser.Parse(set.Schedule); err != nil {
+			return fmt.Errorf("%w: %v", ErrInvalidSchedule, err)
+		}
+	}
 
 	lock := flock.New(setPath(s.dir, set.ID) + ".lock")
 	if err := lock.Lock(); err != nil {

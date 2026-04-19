@@ -7,6 +7,7 @@ import (
 )
 
 var ErrInvalidSet = errors.New("invalid set")
+var ErrInvalidSchedule = errors.New("invalid schedule")
 
 // Threshold is a set-level pass/fail assertion evaluated after a SetRun completes.
 // Scope: "aggregate" | "per_item" | "<item-name>".
@@ -58,6 +59,7 @@ type Set struct {
 	ID            string      `yaml:"id" json:"id"`
 	Name          string      `yaml:"name" json:"name"`
 	Description   string      `yaml:"description,omitempty" json:"description,omitempty"`
+	Schedule      string      `yaml:"schedule,omitempty" json:"schedule,omitempty"`
 	CreatedAt     time.Time   `yaml:"created_at" json:"created_at"`
 	UpdatedAt     time.Time   `yaml:"updated_at" json:"updated_at"`
 	Thresholds    []Threshold `yaml:"thresholds,omitempty" json:"thresholds,omitempty"`
@@ -119,3 +121,6 @@ func setPath(root, id string) string         { return filepath.Join(setsDir(root
 func setRunDir(root, setID, ts string) string {
 	return filepath.Join(setRunsDir(root), setID, ts)
 }
+
+func templatesDir(root string) string         { return filepath.Join(root, "templates") }
+func templatePath(root, id string) string     { return filepath.Join(templatesDir(root), id+".yaml") }

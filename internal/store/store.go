@@ -15,6 +15,7 @@ type Session struct {
 	ID            string        `yaml:"id"`
 	Name          string        `yaml:"name"`
 	Description   string        `yaml:"description,omitempty"`
+	Tags          []string      `yaml:"tags,omitempty"`
 	CreatedAt     time.Time     `yaml:"created_at"`
 	UpdatedAt     time.Time     `yaml:"updated_at"`
 	Config        config.Config `yaml:"config"`
@@ -68,4 +69,9 @@ type Store interface {
 	ListSetRuns(ctx context.Context, setID string) ([]SetRun, error)
 	CreateSetRun(ctx context.Context, setID string) (SetRun, error)
 	FinalizeSetRun(ctx context.Context, run SetRun) error
+
+	ListTemplates(ctx context.Context) ([]string, error)
+	GetTemplate(ctx context.Context, id string) ([]byte, error)
+	SaveTemplate(ctx context.Context, id string, body []byte) error
+	DeleteTemplate(ctx context.Context, id string) error
 }
