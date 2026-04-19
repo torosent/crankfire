@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -17,6 +18,10 @@ import (
 	"github.com/torosent/crankfire/internal/config"
 	"gopkg.in/yaml.v3"
 )
+
+// tagRe is the validation pattern for session tag tokens.
+// Mirrored in internal/tagfilter — keep in sync.
+var tagRe = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,64}$`)
 
 type fsStore struct{ dir string }
 
@@ -112,6 +117,26 @@ func (s *fsStore) SaveSession(ctx context.Context, sess Session) error {
 	if sess.SchemaVersion == 0 { sess.SchemaVersion = SchemaVersion }
 	if sess.CreatedAt.IsZero() { sess.CreatedAt = time.Now().UTC() }
 	sess.UpdatedAt = time.Now().UTC()
+
+	// validate, dedupe, sort tags
+	if len(sess.Tags) > 0 {
+		seen := make(map[string]struct{}, len(sess.Tags))
+		cleaned := make([]string, 0, len(sess.Tags))
+		for _, tag := range sess.Tags {
+			if !tagRe.MatchString(tag) {
+				return fmt.Errorf("%w: %q", ErrInvalidTag, tag)
+			}
+			if _, ok := seen[tag]; ok {
+				continue
+			}
+			seen[tag] = struct{}{}
+			cleaned = append(cleaned, tag)
+		}
+		sort.Strings(cleaned)
+		sess.Tags = cleaned
+	} else {
+		sess.Tags = nil // normalize empty slice to nil for clean YAML
+	}
 
 	data, err := yaml.Marshal(&sess)
 	if err != nil { return fmt.Errorf("marshal session: %w", err) }
@@ -216,5 +241,83 @@ func (s *fsStore) ListRuns(ctx context.Context, sessionID string) ([]Run, error)
 	return out, nil
 }
 
+func (s *fsStore) ListTemplates(ctx context.Context) ([]string, error) {
+	dir := templatesDir(s.dir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return nil, fmt.Errorf("mkdir %s: %w", dir, err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("read templates dir: %w", err)
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".yaml") || strings.HasSuffix(name, ".lock") || strings.HasSuffix(name, ".tmp") {
+			continue
+		}
+		out = append(out, strings.TrimSuffix(name, ".yaml"))
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func (s *fsStore) GetTemplate(ctx context.Context, id string) ([]byte, error) {
+	if err := validateID(id); err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(templatePath(s.dir, id))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read template %s: %w", id, err)
+	}
+	return data, nil
+}
+
+func (s *fsStore) SaveTemplate(ctx context.Context, id string, body []byte) error {
+	if err := validateID(id); err != nil {
+		return err
+	}
+	var probe struct {
+		Template bool `yaml:"template"`
+	}
+	if err := yaml.Unmarshal(body, &probe); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalidTemplate, err)
+	}
+	if !probe.Template {
+		return fmt.Errorf("%w: missing top-level `template: true` marker", ErrInvalidTemplate)
+	}
+	dir := templatesDir(s.dir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("mkdir %s: %w", dir, err)
+	}
+	path := templatePath(s.dir, id)
+	lk := flock.New(path + ".lock")
+	if err := lk.Lock(); err != nil {
+		return fmt.Errorf("lock %s: %w", path, err)
+	}
+	defer lk.Unlock()
+	return writeAtomic(path, body)
+}
+
+func (s *fsStore) DeleteTemplate(ctx context.Context, id string) error {
+	if err := validateID(id); err != nil {
+		return err
+	}
+	err := os.Remove(templatePath(s.dir, id))
+	if errors.Is(err, os.ErrNotExist) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("delete template %s: %w", id, err)
+	}
+	_ = os.Remove(templatePath(s.dir, id) + ".lock")
+	return nil
+}
 
 var _ = filepath.Join // keep imports tidy across tasks

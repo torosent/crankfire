@@ -83,3 +83,89 @@ $DATA_DIR/
     set-run.json
     items/<item-name>/...
 ```
+
+## Tags
+
+Sessions can be tagged for organizational filtering.
+
+```yaml
+# my-session.yaml
+tags: [prod, smoke]
+```
+
+CLI:
+
+```bash
+crankfire session edit <id> --add-tag prod --remove-tag old
+crankfire session list --tag prod
+crankfire session list --tag prod --tag smoke,regression  # AND of OR
+```
+
+In the TUI sessions/sets list, press `/` to open a slash-search prompt.
+Filter syntax: spaces = AND, commas = OR.
+
+## Templates
+
+Templates live at `<dataDir>/templates/<id>.yaml` and use
+[Go text/template](https://pkg.go.dev/text/template) with these funcs:
+`default`, `lower`, `upper`. Missing params render empty.
+
+A template differs from a regular Set only by the top-level marker:
+
+```yaml
+template: true
+name: api-{{ .Env }}-baseline
+description: rate {{ default "100" .Rate }}
+stages:
+- name: smoke
+  items: []
+```
+
+Materialize into a Set:
+
+```bash
+crankfire set new --from-template api-baseline --param Env=prod --param Rate=500
+```
+
+In the TUI, press `t` from the sets list to open the picker.
+
+## Schedules
+
+A Set can declare a cron schedule that fires runs when `crankfire daemon`
+is running:
+
+```yaml
+schedule: "*/5 * * * *"  # every 5 minutes
+schedule: "@daily"        # macros also work
+```
+
+Run the daemon in the foreground:
+
+```bash
+crankfire daemon --data-dir ~/.crankfire
+```
+
+The daemon:
+- Holds an exclusive lock at `<dataDir>/daemon.lock`.
+- Skips overlapping fires.
+- Reloads schedules on `SIGHUP`.
+- Drains in-flight runs (up to 30s) on `SIGINT`/`SIGTERM`.
+- Logs JSON lines to stdout.
+
+Missed fires during downtime are silently skipped.
+
+## Diff
+
+Compare any two runs of the same set:
+
+```bash
+crankfire set diff <run-id-a> <run-id-b>
+crankfire set diff <a> <b> --json
+crankfire set diff <a> <b> --html out.html
+```
+
+Verdict heuristic: any item with P95 latency +5% OR error-rate +0.5pp
+counts as a regression. CLI always exits 0 — diff is informational.
+
+In the TUI, on the set history screen, mark two runs with `space`, then
+press `d`.
