@@ -504,6 +504,28 @@ crankfire --target https://api.example.com \
 
 <img width="1018" height="696" alt="Image" src="https://github.com/user-attachments/assets/4f2a30f1-aed7-4a38-b8bf-e37d37e43611" />
 
+## Terminal UI
+
+`crankfire tui` opens a terminal UI for managing saved load-test sessions and
+viewing past runs.
+
+```
+crankfire tui [--data-dir <path>]
+```
+
+Sessions and run results are stored in `~/.crankfire/` by default
+(or `$CRANKFIRE_DATA_DIR`). Each run writes `result.json` and `report.html`
+to a per-run directory under `runs/<session-id>/<timestamp>/`.
+
+Key bindings:
+
+- Session list: `n` new, `e` edit, `d` delete, `i` import, `r` run, `h` history, `Enter` details, `q` quit
+- Edit screen: `Tab`/`Shift+Tab` move fields, `F2` toggle YAML, `Ctrl+S` save, `Esc` cancel
+- Run screen: `c` or `Esc` cancel, `p` pause snapshots
+- History: `o` open report, `Esc` back
+
+See [TUI Guide](docs/tui.md) for a detailed walkthrough.
+
 ## Responsible Use and Legal Notice
 
 ⚠️ **IMPORTANT**: Crankfire is a powerful load testing tool that can generate significant traffic against target systems.
