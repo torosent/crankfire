@@ -15,12 +15,9 @@ import (
 
 	"github.com/torosent/crankfire/internal/config"
 	"github.com/torosent/crankfire/internal/dashboard"
-	"github.com/torosent/crankfire/internal/httpclient"
-	"github.com/torosent/crankfire/internal/metrics"
 	"github.com/torosent/crankfire/internal/output"
 	"github.com/torosent/crankfire/internal/runner"
 	"github.com/torosent/crankfire/internal/threshold"
-	"github.com/torosent/crankfire/internal/tracing"
 	"github.com/torosent/crankfire/internal/tui"
 )
 
@@ -79,107 +76,13 @@ func Run(args []string) error {
 		return err
 	}
 
-	// Initialize OpenTelemetry tracing
-	tracingProvider, err := tracing.Init(context.Background(), cfg.Tracing)
-	if err != nil {
-		return fmt.Errorf("tracing init: %w", err)
-	}
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = tracingProvider.Shutdown(shutdownCtx)
-	}()
-
-	authProvider, err := buildAuthProvider(cfg)
+	// Initialize OpenTelemetry tracing, auth, feeder, requester, and runner
+	// via the shared BuildRunner helper so the TUI and CLI share wiring.
+	r, collector, cleanup, err := BuildRunner(context.Background(), *cfg)
 	if err != nil {
 		return err
 	}
-	if authProvider != nil {
-		defer authProvider.Close()
-	}
-
-	dataFeeder, err := buildDataFeeder(cfg)
-	if err != nil {
-		return err
-	}
-	if dataFeeder != nil {
-		defer dataFeeder.Close()
-	}
-
-	collector := metrics.NewCollector()
-
-	// Create protocol-specific requester based on configuration
-	var baseRequester runner.Requester
-	switch cfg.Protocol {
-	case config.ProtocolWebSocket:
-		baseRequester = newWebSocketRequester(cfg, collector, authProvider, dataFeeder, tracingProvider)
-	case config.ProtocolSSE:
-		baseRequester = newSSERequester(cfg, collector, authProvider, dataFeeder, tracingProvider)
-	case config.ProtocolGRPC:
-		baseRequester = newGRPCRequester(cfg, collector, authProvider, dataFeeder, tracingProvider)
-	case config.ProtocolHTTP:
-		fallthrough
-	default:
-		// HTTP protocol
-		var builder *httpclient.RequestBuilder
-		if cfg.TargetURL != "" {
-			var err error
-			builder, err = newHTTPRequestBuilder(cfg, authProvider, dataFeeder)
-			if err != nil {
-				return err
-			}
-		}
-
-		selector, err := newEndpointSelector(cfg)
-		if err != nil {
-			return err
-		}
-
-		if builder == nil && selector == nil {
-			return fmt.Errorf("target URL is required")
-		}
-
-		client := httpclient.NewClient(cfg.Timeout)
-		httpReq := &httpRequester{
-			client:    client,
-			builder:   builder,
-			collector: collector,
-			helper: baseRequesterHelper{
-				collector: collector,
-				auth:      authProvider,
-				feeder:    dataFeeder,
-				tracing:   tracingProvider,
-			},
-		}
-
-		var wrapped runner.Requester = httpReq
-		if cfg.LogErrors {
-			wrapped = runner.WithLogging(wrapped, &stderrFailureLogger{})
-		}
-
-		if cfg.Retries > 0 {
-			wrapped = runner.WithRetry(wrapped, newRetryPolicy(cfg.Retries))
-		}
-
-		if selector != nil {
-			wrapped = selector.Wrap(wrapped)
-		}
-
-		baseRequester = wrapped
-	}
-
-	opts := runner.Options{
-		Concurrency:      cfg.Concurrency,
-		TotalRequests:    cfg.Total,
-		Duration:         cfg.Duration,
-		RatePerSecond:    cfg.Rate,
-		GracefulShutdown: cfg.GracefulShutdown,
-		Requester:        baseRequester,
-		ArrivalModel:     toRunnerArrivalModel(cfg.Arrival.Model),
-		LoadPatterns:     toRunnerLoadPatterns(cfg.LoadPatterns),
-	}
-
-	r := runner.New(opts)
+	defer cleanup()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
