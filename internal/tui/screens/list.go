@@ -55,6 +55,17 @@ func (l List) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return PushMsg{NewDetail(l.store, l.sessions[l.cursor])}
 				}
 			}
+		case "n":
+			return l, func() tea.Msg {
+				return PushMsg{NewEdit(l.store, store.Session{})}
+			}
+		case "e":
+			if len(l.sessions) > 0 {
+				sel := l.sessions[l.cursor]
+				return l, func() tea.Msg {
+					return PushMsg{NewEdit(l.store, sel)}
+				}
+			}
 		case "d":
 			if len(l.sessions) > 0 {
 				id := l.sessions[l.cursor].ID
