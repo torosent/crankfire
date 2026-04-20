@@ -3,9 +3,11 @@ package livedash_test
 import (
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/torosent/crankfire/internal/cli/livedash"
 	"github.com/torosent/crankfire/internal/metrics"
 )
@@ -60,5 +62,37 @@ func TestRenderViaRunviewIncludesHeaderAndStatus(t *testing.T) {
 	}
 	if !strings.Contains(out, "HTTP 500 1") {
 		t.Errorf("missing failing status row: %s", out)
+	}
+}
+
+func TestKeyQInvokesShutdownAndQuits(t *testing.T) {
+	c := metrics.NewCollector()
+	c.Start()
+	var called int32
+	d := livedash.New(c, livedash.Opts{Title: "x"}, func() {
+		atomic.AddInt32(&called, 1)
+	})
+	if _, cmd := d.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}}); cmd == nil {
+		t.Fatalf("expected tea.Quit cmd, got nil")
+	}
+	if atomic.LoadInt32(&called) != 1 {
+		t.Errorf("shutdown called %d times, want 1", atomic.LoadInt32(&called))
+	}
+}
+
+func TestStopReturnsFinalStats(t *testing.T) {
+	c := metrics.NewCollector()
+	c.Start()
+	c.RecordRequest(10*time.Millisecond, nil, &metrics.RequestMetadata{Endpoint: "GET /", Protocol: "http", StatusCode: "200"})
+	c.Snapshot()
+
+	d := livedash.New(c, livedash.Opts{Title: "x", Interval: 10 * time.Millisecond}, func() {})
+	if err := d.Start(); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	time.Sleep(40 * time.Millisecond)
+	stats := d.Stop()
+	if stats.Total < 1 {
+		t.Errorf("expected stats.Total >= 1, got %d", stats.Total)
 	}
 }
