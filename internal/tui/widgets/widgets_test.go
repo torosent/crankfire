@@ -36,3 +36,15 @@ func TestPercentileTable(t *testing.T) {
 		t.Errorf("missing fields:\n%s", got)
 	}
 }
+
+func TestEndpointTableRendersExtendedColumns(t *testing.T) {
+	rows := []widgets.EndpointRow{
+		{Method: "GET", Path: "/users", Count: 1000, SharePct: 60.0, RPS: 50.5, P95Ms: 120, P99Ms: 240, ErrPct: 1.5, Errors: 15},
+	}
+	out := widgets.EndpointTable(rows, 10)
+	for _, want := range []string{"GET", "/users", "1000", "60.0%", "50.5", "p95", "120", "p99", "240", "err 15"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
+	}
+}
