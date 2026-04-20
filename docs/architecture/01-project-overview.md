@@ -21,7 +21,7 @@ Unlike heavyweight load-testing platforms that require clusters or web UIs, Cran
 | **Language** | Go 1.24+ |
 | **CLI Framework** | Cobra + Viper |
 | **Metrics** | HdrHistogram-go |
-| **Terminal UI** | Gizak termui/v3 |
+| **Terminal UI** | Charmbracelet Bubble Tea |
 | **WebSocket** | Gorilla WebSocket |
 | **gRPC** | google.golang.org/grpc + protoreflect |
 | **JSON Processing** | tidwall/gjson |
@@ -89,8 +89,9 @@ crankfire/
 │   │   ├── config.go           # Config struct & validation
 │   │   └── loader.go           # CLI/file loading
 │   │
-│   ├── dashboard/              # Live terminal UI
-│   │   └── dashboard.go        # termui widgets
+│   ├── cli/
+│   │   ├── run.go              # Load test orchestration
+│   │   └── livedash/           # Bubble Tea live dashboard driver
 │   │
 │   ├── extractor/              # Response value extraction
 │   │   └── extractor.go        # JSONPath/regex extractors
