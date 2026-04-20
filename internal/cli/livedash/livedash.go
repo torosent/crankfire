@@ -188,22 +188,29 @@ func (d *Driver) View() string {
 }
 
 // Start launches the bubbletea program in alt-screen mode in a background
-// goroutine. Returns immediately.
+// goroutine. It blocks briefly to surface fast startup failures (e.g. no TTY
+// available) before returning.
 func (d *Driver) Start() error {
 	d.started = time.Now()
 	d.program = tea.NewProgram(d, tea.WithAltScreen())
+	errCh := make(chan error, 1)
 	d.wg.Add(1)
-	var startErr error
-	ready := make(chan struct{})
 	go func() {
 		defer d.wg.Done()
-		close(ready)
 		if _, err := d.program.Run(); err != nil {
-			startErr = fmt.Errorf("livedash: %w", err)
+			errCh <- fmt.Errorf("livedash: %w", err)
+			return
 		}
+		errCh <- nil
 	}()
-	<-ready
-	return startErr
+	// Give the program a moment to fail fast on startup errors (e.g. /dev/tty
+	// missing). If it's still running after the grace period, assume success.
+	select {
+	case err := <-errCh:
+		return err
+	case <-time.After(100 * time.Millisecond):
+		return nil
+	}
 }
 
 // Stop signals the program to quit, waits for it to exit, and returns final

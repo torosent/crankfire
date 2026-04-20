@@ -2,6 +2,7 @@ package livedash_test
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -81,6 +82,11 @@ func TestKeyQInvokesShutdownAndQuits(t *testing.T) {
 }
 
 func TestStopReturnsFinalStats(t *testing.T) {
+	if f, err := os.Open("/dev/tty"); err != nil {
+		t.Skipf("no TTY available: %v", err)
+	} else {
+		f.Close()
+	}
 	c := metrics.NewCollector()
 	c.Start()
 	c.RecordRequest(10*time.Millisecond, nil, &metrics.RequestMetadata{Endpoint: "GET /", Protocol: "http", StatusCode: "200"})
