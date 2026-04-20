@@ -21,10 +21,15 @@ func PercentileTable(p map[string]float64) string {
 }
 
 type EndpointRow struct {
-	Method, Path string
-	Count        int64
-	P95Ms        float64
-	ErrPct       float64
+	Method   string
+	Path     string
+	Count    int64
+	SharePct float64
+	RPS      float64
+	P95Ms    float64
+	P99Ms    float64
+	ErrPct   float64
+	Errors   int64
 }
 
 func EndpointTable(rows []EndpointRow, max int) string {
@@ -33,8 +38,10 @@ func EndpointTable(rows []EndpointRow, max int) string {
 	}
 	var b strings.Builder
 	for _, r := range rows {
-		fmt.Fprintf(&b, "%-6s %-20s %8d  p95 %5.0fms  err %4.1f%%\n",
-			r.Method, r.Path, r.Count, r.P95Ms, r.ErrPct)
+		fmt.Fprintf(&b,
+			"%-6s %-24s %8d  %5.1f%%  rps %6.1f  p95 %5.0fms  p99 %5.0fms  err %d (%4.1f%%)\n",
+			r.Method, r.Path, r.Count, r.SharePct, r.RPS, r.P95Ms, r.P99Ms, r.Errors, r.ErrPct,
+		)
 	}
 	return b.String()
 }

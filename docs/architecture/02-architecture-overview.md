@@ -408,7 +408,7 @@ Scheduler (1) --[permits]--> Workers (N) --[results]--> Collector (1)
 graph TD
     subgraph "External Dependencies"
         hdr[hdrhistogram-go]
-        termui[gizak/termui]
+        bubbletea[charmbracelet/bubbletea]
         cobra[spf13/cobra]
         viper[spf13/viper]
         gorilla[gorilla/websocket]
@@ -420,7 +420,7 @@ graph TD
     subgraph "Internal Packages"
         runner --> rate
         metrics --> hdr
-        dashboard --> termui
+        dashboard --> bubbletea
         config --> cobra
         config --> viper
         websocket --> gorilla
@@ -429,7 +429,7 @@ graph TD
     end
     
     style hdr fill:#10b981
-    style termui fill:#10b981
+    style bubbletea fill:#10b981
     style cobra fill:#10b981
     style viper fill:#10b981
     style gorilla fill:#10b981

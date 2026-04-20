@@ -54,7 +54,7 @@ These compose as: Feeder → Variables → Placeholders → Request → Extracto
 - `internal/pool/` — Generic keyed connection pool (`Poolable` interface) for persistent-connection protocols.
 - `internal/threshold/` — CI/CD pass/fail assertions on metrics (e.g., `http_req_duration:p95 < 500`).
 - `internal/tracing/` — OpenTelemetry SDK init, span-per-request helpers, W3C trace context propagation (HTTP headers + gRPC metadata).
-- `internal/output/` and `internal/dashboard/` — JSON, HTML report, and live terminal dashboard output.
+- `internal/output/` — JSON and HTML report output. The live terminal dashboard is driven by `internal/cli/livedash/` (Bubble Tea) wrapping `internal/tui/runview/`.
 
 ### Decorator pattern
 

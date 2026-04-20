@@ -104,22 +104,22 @@ func TestToRunnerLoadSteps(t *testing.T) {
 	}
 }
 
-func TestBuildDashPatternSteps(t *testing.T) {
+func TestBuildLoadPattern(t *testing.T) {
 	tests := []struct {
 		name          string
 		patterns      []config.LoadPattern
+		wantNil       bool
 		wantName      string
 		wantStepCount int
 		wantTotal     time.Duration
 	}{
 		{
-			name:          "empty",
-			patterns:      nil,
-			wantStepCount: 0,
-			wantTotal:     0,
+			name:     "empty",
+			patterns: nil,
+			wantNil:  true,
 		},
 		{
-			name: "step pattern from problem statement",
+			name: "step pattern",
 			patterns: []config.LoadPattern{
 				{
 					Name: "step-up",
@@ -132,7 +132,7 @@ func TestBuildDashPatternSteps(t *testing.T) {
 					},
 				},
 			},
-			wantName:      "step-up",
+			wantName:      "step",
 			wantStepCount: 4,
 			wantTotal:     20*time.Second + 50*time.Second + 60*time.Second + 7*time.Minute + 50*time.Second,
 		},
@@ -141,7 +141,7 @@ func TestBuildDashPatternSteps(t *testing.T) {
 			patterns: []config.LoadPattern{
 				{Name: "ramp-up", Type: config.LoadPatternTypeRamp, FromRPS: 0, ToRPS: 100, Duration: time.Minute},
 			},
-			wantName:      "ramp-up",
+			wantName:      "ramp",
 			wantStepCount: 1,
 			wantTotal:     time.Minute,
 		},
@@ -159,7 +159,7 @@ func TestBuildDashPatternSteps(t *testing.T) {
 			patterns: []config.LoadPattern{
 				{Name: "const", Type: config.LoadPatternTypeConstant, RPS: 50, Duration: 30 * time.Second},
 			},
-			wantName:      "const",
+			wantName:      "constant",
 			wantStepCount: 1,
 			wantTotal:     30 * time.Second,
 		},
@@ -175,6 +175,7 @@ func TestBuildDashPatternSteps(t *testing.T) {
 					},
 				},
 			},
+			wantName:      "step",
 			wantStepCount: 2,
 			wantTotal:     50 * time.Second,
 		},
@@ -182,21 +183,29 @@ func TestBuildDashPatternSteps(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			name, steps, total := buildDashPatternSteps(tt.patterns)
-			if tt.wantName != "" && name != tt.wantName {
-				t.Errorf("name = %q, want %q", name, tt.wantName)
+			lp := buildLoadPattern(tt.patterns)
+			if tt.wantNil {
+				if lp != nil {
+					t.Errorf("expected nil, got %+v", lp)
+				}
+				return
 			}
-			if len(steps) != tt.wantStepCount {
-				t.Errorf("len(steps) = %d, want %d", len(steps), tt.wantStepCount)
+			if lp == nil {
+				t.Fatalf("expected non-nil load pattern")
 			}
-			if total != tt.wantTotal {
-				t.Errorf("total = %v, want %v", total, tt.wantTotal)
+			if tt.wantName != "" && lp.Name != tt.wantName {
+				t.Errorf("Name = %q, want %q", lp.Name, tt.wantName)
 			}
-			// Verify cumulative start offsets for multi-step patterns.
+			if len(lp.Steps) != tt.wantStepCount {
+				t.Errorf("len(Steps) = %d, want %d", len(lp.Steps), tt.wantStepCount)
+			}
+			if lp.Total != tt.wantTotal {
+				t.Errorf("Total = %v, want %v", lp.Total, tt.wantTotal)
+			}
 			var offset time.Duration
-			for i, s := range steps {
+			for i, s := range lp.Steps {
 				if s.Start != offset {
-					t.Errorf("steps[%d].Start = %v, want %v", i, s.Start, offset)
+					t.Errorf("Steps[%d].Start = %v, want %v", i, s.Start, offset)
 				}
 				offset += s.Duration
 			}
