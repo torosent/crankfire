@@ -13,11 +13,13 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/torosent/crankfire/internal/cli/livedash"
 	"github.com/torosent/crankfire/internal/config"
-	"github.com/torosent/crankfire/internal/dashboard"
+	"github.com/torosent/crankfire/internal/metrics"
 	"github.com/torosent/crankfire/internal/output"
 	"github.com/torosent/crankfire/internal/runner"
 	"github.com/torosent/crankfire/internal/threshold"
+	"github.com/torosent/crankfire/internal/tui/runview"
 )
 
 const (
@@ -70,43 +72,33 @@ func Run(args []string) error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 
-	var dash *dashboard.Dashboard
+	var dash *livedash.Driver
+	var dashStats metrics.Stats
 	if cfg.Dashboard {
 		targetURL := cfg.TargetURL
 		if targetURL == "" && len(cfg.Endpoints) > 0 {
-			// Use first endpoint URL if no global target
 			targetURL = cfg.Endpoints[0].URL
 			if targetURL == "" && cfg.Endpoints[0].Path != "" {
 				targetURL = cfg.Endpoints[0].Path
 			}
 		}
-		dashCfg := dashboard.TestConfig{
-			TargetURL:   targetURL,
-			Concurrency: cfg.Concurrency,
-			Duration:    cfg.Duration,
-			Total:       cfg.Total,
-			Rate:        cfg.Rate,
-			Timeout:     cfg.Timeout,
-			Retries:     cfg.Retries,
-			Protocol:    string(cfg.Protocol),
-			Method:      cfg.Method,
-			ConfigFile:  cfg.ConfigFile,
+		opts := livedash.Opts{
+			Title:       "Crankfire",
+			Header:      buildDashHeader(targetURL, *cfg),
+			Total:       int64(cfg.Total),
+			LoadPattern: buildLoadPattern(cfg.LoadPatterns),
 		}
-		patternName, patternSteps, patternTotal := buildDashPatternSteps(cfg.LoadPatterns)
-		dashCfg.LoadPatternName = patternName
-		dashCfg.LoadPatternSteps = patternSteps
-		dashCfg.LoadPatternTotal = patternTotal
-		dash, err = dashboard.New(collector, dashCfg, cancel)
-		if err != nil {
+		dash = livedash.New(collector, opts, cancel)
+		if err := dash.Start(); err != nil {
 			return err
 		}
-		dash.Start()
 		defer func() {
 			if dash != nil {
-				dash.Stop()
+				dashStats = dash.Stop()
 			}
 		}()
 	}
+	_ = dashStats // reserved for future use
 
 	var progress *output.ProgressReporter
 	if !cfg.JSONOutput && !cfg.Dashboard {
@@ -155,11 +147,6 @@ func Run(args []string) error {
 		<-snapshotDone
 		// Take one final snapshot after the test completes
 		collector.Snapshot()
-	}
-
-	if dash != nil {
-		dash.Stop()
-		dash = nil
 	}
 
 	stats := collector.Stats(result.Duration)
@@ -340,27 +327,24 @@ func (j *jitterSource) jitter(max time.Duration) time.Duration {
 	return time.Duration(j.rnd.Int63n(int64(max)))
 }
 
-// buildDashPatternSteps converts config load patterns into dashboard display segments.
-// It returns the display name, ordered step list, and total scheduled duration.
-func buildDashPatternSteps(patterns []config.LoadPattern) (string, []dashboard.PatternStep, time.Duration) {
+// buildLoadPattern converts config load patterns into a runview LoadPattern
+// suitable for the live dashboard. Returns nil if no patterns are configured.
+func buildLoadPattern(patterns []config.LoadPattern) *runview.LoadPattern {
 	if len(patterns) == 0 {
-		return "", nil, 0
+		return nil
 	}
-	var steps []dashboard.PatternStep
+	var steps []runview.PatternStep
 	var names []string
 	var offset time.Duration
-
 	for _, p := range patterns {
-		if p.Name != "" {
-			names = append(names, p.Name)
-		}
 		switch p.Type {
 		case config.LoadPatternTypeStep:
+			names = append(names, "step")
 			for _, s := range p.Steps {
 				if s.Duration <= 0 {
 					continue
 				}
-				steps = append(steps, dashboard.PatternStep{
+				steps = append(steps, runview.PatternStep{
 					Label:    fmt.Sprintf("%d RPS", s.RPS),
 					Duration: s.Duration,
 					Start:    offset,
@@ -371,7 +355,8 @@ func buildDashPatternSteps(patterns []config.LoadPattern) (string, []dashboard.P
 			if p.Duration <= 0 {
 				continue
 			}
-			steps = append(steps, dashboard.PatternStep{
+			names = append(names, "ramp")
+			steps = append(steps, runview.PatternStep{
 				Label:    fmt.Sprintf("%d→%d RPS", p.FromRPS, p.ToRPS),
 				Duration: p.Duration,
 				Start:    offset,
@@ -381,17 +366,19 @@ func buildDashPatternSteps(patterns []config.LoadPattern) (string, []dashboard.P
 			if p.Duration <= 0 {
 				continue
 			}
-			steps = append(steps, dashboard.PatternStep{
+			names = append(names, "spike")
+			steps = append(steps, runview.PatternStep{
 				Label:    fmt.Sprintf("Spike %d RPS", p.RPS),
 				Duration: p.Duration,
 				Start:    offset,
 			})
 			offset += p.Duration
-		case config.LoadPatternTypeConstant:
+		default:
 			if p.Duration <= 0 {
 				continue
 			}
-			steps = append(steps, dashboard.PatternStep{
+			names = append(names, string(p.Type))
+			steps = append(steps, runview.PatternStep{
 				Label:    fmt.Sprintf("%d RPS", p.RPS),
 				Duration: p.Duration,
 				Start:    offset,
@@ -399,10 +386,52 @@ func buildDashPatternSteps(patterns []config.LoadPattern) (string, []dashboard.P
 			offset += p.Duration
 		}
 	}
-
-	name := strings.Join(names, ", ")
-	if name == "" && len(steps) > 0 {
-		name = "pattern"
+	if len(steps) == 0 {
+		return nil
 	}
-	return name, steps, offset
+	return &runview.LoadPattern{
+		Name:  strings.Join(names, "+"),
+		Total: offset,
+		Steps: steps,
+	}
+}
+
+// buildDashHeader returns the header lines shown above the live dashboard
+// progress bar (target URL + key test parameters).
+func buildDashHeader(targetURL string, cfg config.Config) []string {
+	lines := []string{fmt.Sprintf("Target: %s", targetURL)}
+	var parts []string
+	if cfg.Protocol != "" && string(cfg.Protocol) != "http" {
+		parts = append(parts, fmt.Sprintf("Protocol: %s", cfg.Protocol))
+	}
+	if cfg.Method != "" && cfg.Method != "GET" {
+		parts = append(parts, fmt.Sprintf("Method: %s", cfg.Method))
+	}
+	if cfg.Concurrency > 0 {
+		parts = append(parts, fmt.Sprintf("Workers: %d", cfg.Concurrency))
+	}
+	if cfg.Rate > 0 {
+		parts = append(parts, fmt.Sprintf("Rate: %d/s", cfg.Rate))
+	} else {
+		parts = append(parts, "Rate: unlimited")
+	}
+	if cfg.Duration > 0 {
+		parts = append(parts, fmt.Sprintf("Duration: %s", cfg.Duration))
+	}
+	if cfg.Total > 0 {
+		parts = append(parts, fmt.Sprintf("Total: %d", cfg.Total))
+	}
+	if cfg.Timeout > 0 {
+		parts = append(parts, fmt.Sprintf("Timeout: %s", cfg.Timeout))
+	}
+	if cfg.Retries > 0 {
+		parts = append(parts, fmt.Sprintf("Retries: %d", cfg.Retries))
+	}
+	if cfg.ConfigFile != "" {
+		parts = append(parts, fmt.Sprintf("Config: %s", cfg.ConfigFile))
+	}
+	if len(parts) > 0 {
+		lines = append(lines, strings.Join(parts, " | "))
+	}
+	return lines
 }
