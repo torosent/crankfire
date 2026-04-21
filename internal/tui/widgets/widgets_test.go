@@ -30,6 +30,24 @@ func TestSparklineEmpty(t *testing.T) {
 	}
 }
 
+func TestSparklineAreaUsesRequestedHeight(t *testing.T) {
+	samples := []float64{0, 1, 2, 3, 4, 5, 6, 7}
+	got := widgets.SparklineArea(samples, 8, 4)
+	lines := strings.Split(got, "\n")
+	if len(lines) != 4 {
+		t.Fatalf("got %d lines want 4:\n%s", len(lines), got)
+	}
+	var nonEmpty int
+	for _, line := range lines {
+		if strings.ContainsRune(line, '█') {
+			nonEmpty++
+		}
+	}
+	if nonEmpty < 2 {
+		t.Errorf("expected multi-line chart output, got:\n%s", got)
+	}
+}
+
 func TestPercentileTable(t *testing.T) {
 	got := widgets.PercentileTable(map[string]float64{"p50": 10, "p95": 99})
 	if !strings.Contains(got, "p50") || !strings.Contains(got, "99") {
@@ -46,5 +64,19 @@ func TestEndpointTableRendersExtendedColumns(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q in:\n%s", want, out)
 		}
+	}
+}
+
+func TestTargetBarUsesFullWidth(t *testing.T) {
+	got := widgets.TargetBar(24, 12, 20, 20)
+	if len([]rune(got)) != 24 {
+		t.Fatalf("got width %d want 24", len([]rune(got)))
+	}
+}
+
+func TestTargetBarUsesRollingMaxWhenTargetIsUnlimited(t *testing.T) {
+	got := widgets.TargetBar(20, 30, 0, 40)
+	if strings.Count(got, "█") == 0 {
+		t.Fatalf("expected filled cells in %q", got)
 	}
 }

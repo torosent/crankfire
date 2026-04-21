@@ -92,11 +92,15 @@ func NewRun(s store.Store, sess store.Session) *Run {
 		sess:   sess,
 		status: runStatusStarting,
 		view: runview.New(runview.Options{
-			Title: sess.Name,
-			Total: int64(sess.Config.Total),
+			Title:          sess.Name,
+			Total:          int64(sess.Config.Total),
+			RequestContext: cli.BuildDashboardContext(sess.Config.TargetURL, sess.Config),
 		}),
 	}
 }
+
+// ViewModelForTest exposes the internal runview model for white-box tests.
+func (r *Run) ViewModelForTest() runview.Model { return r.view }
 
 // Init kicks off the run: creates the run record, builds the runner, and
 // schedules the first snapshot tick.
@@ -166,6 +170,13 @@ func (r *Run) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "esc", "ctrl+c":
 			return r, r.cancelRun()
 		}
+	case tea.WindowSizeMsg:
+		updated, _ := r.view.Update(tea.WindowSizeMsg{
+			Width:  m.Width,
+			Height: max(1, m.Height-2),
+		})
+		r.view = updated
+		return r, nil
 	case runStartedMsg:
 		r.mu.Lock()
 		r.run = m.run
@@ -342,6 +353,6 @@ func (r *Run) View() string {
 		b.WriteString(" — ")
 		b.WriteString(statusMsg)
 	}
-	b.WriteString("\n[q/esc] cancel\n")
+	b.WriteString("\n[q/esc] cancel")
 	return b.String()
 }

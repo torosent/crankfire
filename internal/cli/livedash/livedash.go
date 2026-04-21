@@ -19,11 +19,12 @@ const defaultTickInterval = 500 * time.Millisecond
 
 // Opts configures the Driver and its embedded runview.
 type Opts struct {
-	Title       string
-	Header      []string
-	Total       int64
-	LoadPattern *runview.LoadPattern
-	Interval    time.Duration
+	Title          string
+	Header         []string
+	RequestContext runview.RequestContext
+	Total          int64
+	LoadPattern    *runview.LoadPattern
+	Interval       time.Duration
 }
 
 // Driver wires a metrics collector to a runview.Model rendered by a
@@ -52,10 +53,11 @@ func New(c *metrics.Collector, opts Opts, shutdown func()) *Driver {
 		opts:      opts,
 		shutdown:  shutdown,
 		model: runview.New(runview.Options{
-			Title:       opts.Title,
-			Total:       opts.Total,
-			Header:      opts.Header,
-			LoadPattern: opts.LoadPattern,
+			Title:          opts.Title,
+			Total:          opts.Total,
+			Header:         opts.Header,
+			RequestContext: opts.RequestContext,
+			LoadPattern:    opts.LoadPattern,
 		}),
 	}
 }

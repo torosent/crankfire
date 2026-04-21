@@ -75,18 +75,12 @@ func Run(args []string) error {
 	var dash *livedash.Driver
 	var dashStats metrics.Stats
 	if cfg.Dashboard {
-		targetURL := cfg.TargetURL
-		if targetURL == "" && len(cfg.Endpoints) > 0 {
-			targetURL = cfg.Endpoints[0].URL
-			if targetURL == "" && cfg.Endpoints[0].Path != "" {
-				targetURL = cfg.Endpoints[0].Path
-			}
-		}
+		targetURL := resolveDashboardTargetURL(*cfg)
 		opts := livedash.Opts{
-			Title:       "Crankfire",
-			Header:      buildDashHeader(targetURL, *cfg),
-			Total:       int64(cfg.Total),
-			LoadPattern: buildLoadPattern(cfg.LoadPatterns),
+			Title:          "Crankfire",
+			RequestContext: BuildDashboardContext(targetURL, *cfg),
+			Total:          int64(cfg.Total),
+			LoadPattern:    buildLoadPattern(cfg.LoadPatterns),
 		}
 		dash = livedash.New(collector, opts, cancel)
 		if err := dash.Start(); err != nil {
@@ -394,44 +388,4 @@ func buildLoadPattern(patterns []config.LoadPattern) *runview.LoadPattern {
 		Total: offset,
 		Steps: steps,
 	}
-}
-
-// buildDashHeader returns the header lines shown above the live dashboard
-// progress bar (target URL + key test parameters).
-func buildDashHeader(targetURL string, cfg config.Config) []string {
-	lines := []string{fmt.Sprintf("Target: %s", targetURL)}
-	var parts []string
-	if cfg.Protocol != "" && string(cfg.Protocol) != "http" {
-		parts = append(parts, fmt.Sprintf("Protocol: %s", cfg.Protocol))
-	}
-	if cfg.Method != "" && cfg.Method != "GET" {
-		parts = append(parts, fmt.Sprintf("Method: %s", cfg.Method))
-	}
-	if cfg.Concurrency > 0 {
-		parts = append(parts, fmt.Sprintf("Workers: %d", cfg.Concurrency))
-	}
-	if cfg.Rate > 0 {
-		parts = append(parts, fmt.Sprintf("Rate: %d/s", cfg.Rate))
-	} else {
-		parts = append(parts, "Rate: unlimited")
-	}
-	if cfg.Duration > 0 {
-		parts = append(parts, fmt.Sprintf("Duration: %s", cfg.Duration))
-	}
-	if cfg.Total > 0 {
-		parts = append(parts, fmt.Sprintf("Total: %d", cfg.Total))
-	}
-	if cfg.Timeout > 0 {
-		parts = append(parts, fmt.Sprintf("Timeout: %s", cfg.Timeout))
-	}
-	if cfg.Retries > 0 {
-		parts = append(parts, fmt.Sprintf("Retries: %d", cfg.Retries))
-	}
-	if cfg.ConfigFile != "" {
-		parts = append(parts, fmt.Sprintf("Config: %s", cfg.ConfigFile))
-	}
-	if len(parts) > 0 {
-		lines = append(lines, strings.Join(parts, " | "))
-	}
-	return lines
 }

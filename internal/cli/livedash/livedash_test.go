@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/torosent/crankfire/internal/cli/livedash"
 	"github.com/torosent/crankfire/internal/metrics"
+	"github.com/torosent/crankfire/internal/tui/runview"
 )
 
 func TestBuildSnapshotPopulatesAllFields(t *testing.T) {
@@ -100,5 +101,86 @@ func TestStopReturnsFinalStats(t *testing.T) {
 	stats := d.Stop()
 	if stats.Total < 1 {
 		t.Errorf("expected stats.Total >= 1, got %d", stats.Total)
+	}
+}
+
+func TestRenderViaRunviewIncludesRequestContext(t *testing.T) {
+	c := metrics.NewCollector()
+	c.Start()
+	c.RecordRequest(10*time.Millisecond, nil, &metrics.RequestMetadata{Endpoint: "POST /run", Protocol: "http", StatusCode: "200"})
+	c.Snapshot()
+
+	d := livedash.New(c, livedash.Opts{
+		Title: "T",
+		RequestContext: runview.RequestContext{
+			RawURL:   "https://example.com/run?payloadsizekb=100",
+			Method:   "POST",
+			Protocol: "http",
+			Params: []runview.ContextParam{
+				{Label: "Workers", Value: "5"},
+				{Label: "Rate", Value: "5/s"},
+			},
+			QueryParams: []runview.ContextParam{
+				{Label: "payloadsizekb", Value: "100"},
+			},
+		},
+		Total: 10,
+	}, func() {})
+
+	model := d.ModelForTest()
+	ctx := model.RequestContextForTest()
+
+	if ctx.RawURL != "https://example.com/run?payloadsizekb=100" {
+		t.Errorf("RawURL = %q, want %q", ctx.RawURL, "https://example.com/run?payloadsizekb=100")
+	}
+	if ctx.Method != "POST" {
+		t.Errorf("Method = %q, want %q", ctx.Method, "POST")
+	}
+	if ctx.Protocol != "http" {
+		t.Errorf("Protocol = %q, want %q", ctx.Protocol, "http")
+	}
+	if len(ctx.Params) != 2 {
+		t.Fatalf("len(Params) = %d, want 2", len(ctx.Params))
+	}
+	if ctx.Params[0].Label != "Workers" || ctx.Params[0].Value != "5" {
+		t.Errorf("Params[0] = %+v, want {Workers, 5}", ctx.Params[0])
+	}
+	if ctx.Params[1].Label != "Rate" || ctx.Params[1].Value != "5/s" {
+		t.Errorf("Params[1] = %+v, want {Rate, 5/s}", ctx.Params[1])
+	}
+	if len(ctx.QueryParams) != 1 {
+		t.Fatalf("len(QueryParams) = %d, want 1", len(ctx.QueryParams))
+	}
+	if ctx.QueryParams[0].Label != "payloadsizekb" || ctx.QueryParams[0].Value != "100" {
+		t.Errorf("QueryParams[0] = %+v, want {payloadsizekb, 100}", ctx.QueryParams[0])
+	}
+}
+
+func TestRenderViaRunviewDoesNotDuplicateHeaderWhenRequestContextExists(t *testing.T) {
+	c := metrics.NewCollector()
+	c.Start()
+	c.RecordRequest(10*time.Millisecond, nil, &metrics.RequestMetadata{Endpoint: "POST /run", Protocol: "http", StatusCode: "200"})
+	c.Snapshot()
+
+	d := livedash.New(c, livedash.Opts{
+		Title:  "T",
+		Header: []string{"Target: https://example.com/run"},
+		RequestContext: runview.RequestContext{
+			RawURL:   "https://example.com/run",
+			Method:   "POST",
+			Protocol: "http",
+		},
+		Total: 10,
+	}, func() {})
+
+	snap := livedash.BuildSnapshot(c, 500*time.Millisecond)
+	model := d.ModelForTest()
+	updated, _ := model.Update(snap)
+	out := updated.View()
+	if strings.Contains(out, "Target: https://example.com/run") {
+		t.Fatalf("expected structured request context to replace the legacy summary header:\n%s", out)
+	}
+	if !strings.Contains(out, "Request Context") {
+		t.Fatalf("expected request context panel in:\n%s", out)
 	}
 }
