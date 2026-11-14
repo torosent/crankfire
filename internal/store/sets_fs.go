@@ -148,7 +148,7 @@ func (s *fsStore) CreateSetRun(_ context.Context, setID string) (SetRun, error) 
 	}
 	ts := time.Now().UTC().Format("2006-01-02T15-04-05.000000000Z")
 	dir := setRunDir(s.dir, setID, ts)
-	if err := os.MkdirAll(filepath.Join(dir, "items"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "items"), 0o700); err != nil {
 		return SetRun{}, fmt.Errorf("mkdir set run: %w", err)
 	}
 	run := SetRun{

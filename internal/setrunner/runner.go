@@ -59,7 +59,15 @@ func (r *Runner) Run(ctx context.Context, setID string, events chan<- Event) (st
 	if err != nil {
 		return store.SetRun{}, fmt.Errorf("get set: %w", err)
 	}
-	run, err := r.store.CreateSetRun(ctx, setID)
+	// The file name is the ID; the id: field inside may be missing or stale.
+	set.ID = setID
+	return r.RunSet(ctx, set, events)
+}
+
+// RunSet runs the set as given. Callers use it to apply one-off overrides
+// or thresholds without saving them to the store.
+func (r *Runner) RunSet(ctx context.Context, set store.Set, events chan<- Event) (store.SetRun, error) {
+	run, err := r.store.CreateSetRun(ctx, set.ID)
 	if err != nil {
 		return store.SetRun{}, fmt.Errorf("create run: %w", err)
 	}

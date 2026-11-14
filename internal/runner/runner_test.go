@@ -2,13 +2,13 @@ package runner_test
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"golang.org/x/time/rate"
-
 	"github.com/torosent/crankfire/internal/runner"
+	"github.com/torosent/crankfire/internal/variables"
 )
 
 // fakeRequester simulates performing a request with fixed latency.
@@ -125,7 +125,6 @@ func TestRateLimiterCapsThroughput(t *testing.T) {
 		Duration:       duration,
 		RatePerSecond:  rateLimit,
 		Requester:      &fakeRequester{latency: 0, calls: &calls},
-		LimiterFactory: func(rps int) *rate.Limiter { return rate.NewLimiter(rate.Limit(rps), 1) },
 	})
 	res := r.Run(context.Background())
 	// expected upper bound ~ rateLimit * (duration seconds)
@@ -200,5 +199,31 @@ func TestRunnerPoissonArrivalUsesSampler(t *testing.T) {
 	}
 	if atomic.LoadInt64(&sampleCalls) == 0 {
 		t.Fatalf("poisson sampler was never invoked")
+	}
+}
+
+// storeRecorder remembers which variable store each call was given.
+type storeRecorder struct {
+	mu     sync.Mutex
+	stores []variables.Store
+}
+
+func (s *storeRecorder) Do(ctx context.Context) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.stores = append(s.stores, variables.FromContext(ctx))
+	return nil
+}
+
+// Request chaining needs the value extracted by one request to still be
+// there for the same worker's next request.
+func TestRunnerKeepsOneVariableStorePerWorker(t *testing.T) {
+	rec := &storeRecorder{}
+	runner.New(runner.Options{Concurrency: 1, TotalRequests: 3, Requester: rec}).Run(context.Background())
+	if len(rec.stores) != 3 || rec.stores[0] == nil {
+		t.Fatalf("expected 3 calls with a store, got %v", rec.stores)
+	}
+	if rec.stores[1] != rec.stores[0] || rec.stores[2] != rec.stores[0] {
+		t.Fatalf("worker got a different store on a later request")
 	}
 }

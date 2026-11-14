@@ -676,3 +676,25 @@ func TestRequestBuilder_Build_BodyError(t *testing.T) {
 		t.Error("Build(body error) error = nil, want error")
 	}
 }
+
+// A body with nothing to fill in must be streamed, not read into memory on
+// every request (a large --body-file times the worker count is a lot of RAM).
+func TestBuildOnlySubstitutesBodiesWithPlaceholders(t *testing.T) {
+	tests := []struct {
+		body string
+		want bool
+	}{
+		{`{"name":"{{name}}"}`, true},
+		{`{"a":{"b":1}}`, false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		builder, err := NewRequestBuilder(&config.Config{TargetURL: "http://example.com", Method: "POST", Body: tt.body})
+		if err != nil {
+			t.Fatalf("NewRequestBuilder(%q) error = %v", tt.body, err)
+		}
+		if builder.bodyHasPlaceholders != tt.want {
+			t.Errorf("body %q: bodyHasPlaceholders = %v, want %v", tt.body, builder.bodyHasPlaceholders, tt.want)
+		}
+	}
+}

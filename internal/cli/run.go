@@ -15,7 +15,6 @@ import (
 
 	"github.com/torosent/crankfire/internal/cli/livedash"
 	"github.com/torosent/crankfire/internal/config"
-	"github.com/torosent/crankfire/internal/metrics"
 	"github.com/torosent/crankfire/internal/output"
 	"github.com/torosent/crankfire/internal/runner"
 	"github.com/torosent/crankfire/internal/threshold"
@@ -57,8 +56,18 @@ func Run(args []string) error {
 	}
 
 	// Load HAR endpoints if specified
+	replaysHAR := strings.TrimSpace(cfg.HARFile) != ""
 	if err := loadHAREndpoints(cfg); err != nil {
 		return err
+	}
+	if replaysHAR {
+		printEndpointHosts(os.Stderr, cfg.Endpoints)
+	}
+
+	// Parse thresholds before the run: a typo must not cost a whole test.
+	thresholds, err := threshold.ParseMultiple(cfg.Thresholds)
+	if err != nil {
+		return fmt.Errorf("threshold parsing failed: %w", err)
 	}
 
 	// Initialize OpenTelemetry tracing, auth, feeder, requester, and runner
@@ -73,7 +82,6 @@ func Run(args []string) error {
 	defer cancel()
 
 	var dash *livedash.Driver
-	var dashStats metrics.Stats
 	if cfg.Dashboard {
 		targetURL := resolveDashboardTargetURL(*cfg)
 		opts := livedash.Opts{
@@ -86,13 +94,9 @@ func Run(args []string) error {
 		if err := dash.Start(); err != nil {
 			return err
 		}
-		defer func() {
-			if dash != nil {
-				dashStats = dash.Stop()
-			}
-		}()
+		// Restores the terminal on any other exit path; Stop is safe to call twice.
+		defer dash.Stop()
 	}
-	_ = dashStats // reserved for future use
 
 	var progress *output.ProgressReporter
 	if !cfg.JSONOutput && !cfg.Dashboard {
@@ -134,6 +138,12 @@ func Run(args []string) error {
 
 	result := r.Run(ctx)
 
+	// Leave the dashboard's alternate screen first; a report printed while it
+	// is open is wiped when it closes.
+	if dash != nil {
+		dash.Stop()
+	}
+
 	// Stop snapshot collection
 	if snapshotTicker != nil {
 		snapshotTicker.Stop()
@@ -147,11 +157,7 @@ func Run(args []string) error {
 
 	// Parse and evaluate thresholds
 	var thresholdResults []threshold.Result
-	if len(cfg.Thresholds) > 0 {
-		thresholds, err := threshold.ParseMultiple(cfg.Thresholds)
-		if err != nil {
-			return fmt.Errorf("threshold parsing failed: %w", err)
-		}
+	if len(thresholds) > 0 {
 		evaluator := threshold.NewEvaluator(thresholds)
 		thresholdResults = evaluator.Evaluate(stats)
 	}

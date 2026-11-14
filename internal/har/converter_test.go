@@ -735,3 +735,18 @@ func TestConvert_PreservesEndpointStructure(t *testing.T) {
 		t.Errorf("expected weight 1, got %d", ep.Weight)
 	}
 }
+
+// Chrome records HTTP/2 pseudo-headers; Go refuses to send them, so every
+// replayed request used to fail.
+func TestExtractHeaders_SkipsHeadersGoCannotSend(t *testing.T) {
+	extracted := extractHeaders([]*Header{
+		{Name: ":authority", Value: "example.com"},
+		{Name: ":path", Value: "/api"},
+		{Name: "Host", Value: "example.com"},
+		{Name: "Content-Length", Value: "12"},
+		{Name: "Accept", Value: "*/*"},
+	})
+	if len(extracted) != 1 || extracted["Accept"] != "*/*" {
+		t.Errorf("expected only Accept to survive, got %v", extracted)
+	}
+}

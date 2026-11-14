@@ -2,6 +2,9 @@ package cli
 
 import (
 	"fmt"
+	"io"
+	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/torosent/crankfire/internal/config"
@@ -22,7 +25,10 @@ func loadHAREndpoints(cfg *config.Config) error {
 	}
 
 	// Parse and apply filter
-	opts := parseHARFilterToOptions(cfg.HARFilter)
+	opts, err := parseHARFilterToOptions(cfg.HARFilter)
+	if err != nil {
+		return err
+	}
 
 	// Convert HAR to endpoints
 	endpoints, err := har.Convert(harData, opts)
@@ -32,8 +38,25 @@ func loadHAREndpoints(cfg *config.Config) error {
 
 	// Append to existing endpoints
 	cfg.Endpoints = append(cfg.Endpoints, endpoints...)
+	// Loaded: a second call (BuildRunner also calls this) must not add them twice.
+	cfg.HARFile = ""
 
 	return nil
+}
+
+// printEndpointHosts says which hosts are about to get load. A browser
+// recording also holds third-party hosts (analytics, CDNs).
+func printEndpointHosts(w io.Writer, endpoints []config.Endpoint) {
+	seen := map[string]bool{}
+	var hosts []string
+	for _, ep := range endpoints {
+		if u, err := url.Parse(ep.URL); err == nil && u.Host != "" && !seen[u.Host] {
+			seen[u.Host] = true
+			hosts = append(hosts, u.Host)
+		}
+	}
+	sort.Strings(hosts)
+	fmt.Fprintf(w, "HAR: replaying %d endpoints to %d host(s): %s\n", len(endpoints), len(hosts), strings.Join(hosts, ", "))
 }
 
 // parseHARFilterToOptions converts a filter string to har.ConvertOptions.
@@ -43,18 +66,21 @@ func loadHAREndpoints(cfg *config.Config) error {
 //   - "method:GET"
 //   - "method:GET,POST"
 //   - "host:example.com;method:GET,POST"
-func parseHARFilterToOptions(filter string) har.ConvertOptions {
+func parseHARFilterToOptions(filter string) (har.ConvertOptions, error) {
 	opts := har.DefaultOptions()
 
 	if filter == "" {
-		return opts
+		return opts, nil
 	}
 
 	parts := strings.Split(filter, ";")
 	for _, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
 		kv := strings.SplitN(part, ":", 2)
 		if len(kv) != 2 {
-			continue
+			return opts, fmt.Errorf("invalid HAR filter %q (expected host:... or method:...)", part)
 		}
 		key := strings.TrimSpace(strings.ToLower(kv[0]))
 		value := strings.TrimSpace(kv[1])
@@ -72,8 +98,11 @@ func parseHARFilterToOptions(filter string) har.ConvertOptions {
 				methods[i] = strings.TrimSpace(methods[i])
 			}
 			opts.IncludeMethods = methods
+		default:
+			// A typo here used to mean "no filter": every recorded host got load.
+			return opts, fmt.Errorf("unknown HAR filter key %q (supported: host, method)", key)
 		}
 	}
 
-	return opts
+	return opts, nil
 }

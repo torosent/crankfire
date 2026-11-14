@@ -68,7 +68,6 @@ func (r *httpRequester) Do(ctx context.Context) error {
 	}
 
 	resp, err := r.client.Do(req)
-	latency := time.Since(start)
 	if err != nil {
 		spanErr = err
 		return r.helper.recordError(start, meta, "http", "execute", err)
@@ -77,12 +76,19 @@ func (r *httpRequester) Do(ctx context.Context) error {
 
 	span.SetAttributes(attribute.Int("http.response.status_code", resp.StatusCode))
 
-	// Read response body for extraction and error logging (up to 1MB limit).
+	// Keep the body (up to 1MB) only when an extractor or the error log needs it.
 	// Body read errors are non-fatal; we continue with an empty body.
-	body, bodyErr := io.ReadAll(io.LimitReader(resp.Body, maxBodyReadSize))
-	if bodyErr != nil {
-		body = nil // Ensure body is nil on error for consistent behavior
+	var body []byte
+	if resp.StatusCode >= 400 || (tmpl != nil && len(tmpl.extractors) > 0) {
+		var bodyErr error
+		body, bodyErr = io.ReadAll(io.LimitReader(resp.Body, maxBodyReadSize))
+		if bodyErr != nil {
+			body = nil // Ensure body is nil on error for consistent behavior
+		}
 	}
+	// Read the rest so latency covers the whole download and the connection is reused.
+	_, _ = io.Copy(io.Discard, resp.Body)
+	latency := time.Since(start)
 
 	var resultErr error
 	if resp.StatusCode >= 400 {

@@ -33,7 +33,7 @@ func NewFS(dataDir string) (Store, error) {
 		setsDir(dataDir),
 		setRunsDir(dataDir),
 	} {
-		if err := os.MkdirAll(d, 0o755); err != nil {
+		if err := os.MkdirAll(d, 0o700); err != nil {
 			return nil, fmt.Errorf("mkdir %s: %w", d, err)
 		}
 	}
@@ -69,7 +69,7 @@ func validateID(id string) error {
 
 func writeAtomic(path string, data []byte) error {
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", tmp, err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
@@ -179,7 +179,7 @@ func (s *fsStore) CreateRun(ctx context.Context, sessionID string) (Run, error) 
 	}
 	started := time.Now().UTC()
 	dir := runDir(s.dir, sessionID, started.Format(time.RFC3339Nano))
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return Run{}, fmt.Errorf("mkdir run dir: %w", err)
 	}
 	run := Run{SessionID: sessionID, StartedAt: started, Status: RunStatusRunning, Dir: dir}
@@ -243,7 +243,7 @@ func (s *fsStore) ListRuns(ctx context.Context, sessionID string) ([]Run, error)
 
 func (s *fsStore) ListTemplates(ctx context.Context) ([]string, error) {
 	dir := templatesDir(s.dir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", dir, err)
 	}
 	entries, err := os.ReadDir(dir)
@@ -293,7 +293,7 @@ func (s *fsStore) SaveTemplate(ctx context.Context, id string, body []byte) erro
 		return fmt.Errorf("%w: missing top-level `template: true` marker", ErrInvalidTemplate)
 	}
 	dir := templatesDir(s.dir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("mkdir %s: %w", dir, err)
 	}
 	path := templatePath(s.dir, id)
@@ -319,5 +319,3 @@ func (s *fsStore) DeleteTemplate(ctx context.Context, id string) error {
 	_ = os.Remove(templatePath(s.dir, id) + ".lock")
 	return nil
 }
-
-var _ = filepath.Join // keep imports tidy across tasks

@@ -15,11 +15,6 @@ type Poolable interface {
 	Close() error
 }
 
-// MetricsProvider allows clients to expose their current metrics state.
-type MetricsProvider interface {
-	Metrics() interface{}
-}
-
 // ConnectionPool manages a pool of reusable connections keyed by target+headers.
 type ConnectionPool struct {
 	pools sync.Map // map[string]chan Poolable

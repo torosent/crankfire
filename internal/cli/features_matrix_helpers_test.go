@@ -19,6 +19,7 @@ import (
 
 	"github.com/torosent/crankfire/internal/config"
 	"github.com/torosent/crankfire/internal/feeder"
+	"github.com/torosent/crankfire/internal/httpclient"
 	"github.com/torosent/crankfire/internal/metrics"
 	"github.com/torosent/crankfire/internal/runner"
 )
@@ -253,7 +254,7 @@ func runLoadTest(t *testing.T, cfg *config.Config, serverURL string) (*metrics.S
 
 	// Create the actual requester used in production
 	// Note: We pass nil for auth provider and feeder since most tests don't use them
-	requester, err := NewRequesterFromConfig(&cfgCopy, collector, nil, nil)
+	requester, err := buildRequester(&cfgCopy, collector, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Failed to create production requester: %v", err)
 	}
@@ -297,11 +298,11 @@ func runLoadTestWithFeeder(t *testing.T, cfg *config.Config, serverURL string, f
 
 	// Create the actual requester used in production with feeder support
 	// Wrap feeder to match the expected interface
-	var wrappedFeeder feederAdapter
+	var wrappedFeeder httpclient.Feeder
 	if f != nil {
 		wrappedFeeder = &feederWrapper{f}
 	}
-	requester, err := NewRequesterFromConfig(&cfgCopy, collector, nil, wrappedFeeder)
+	requester, err := buildRequester(&cfgCopy, collector, nil, wrappedFeeder, nil)
 	if err != nil {
 		t.Fatalf("Failed to create production requester: %v", err)
 	}

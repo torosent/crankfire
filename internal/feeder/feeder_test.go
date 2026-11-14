@@ -219,61 +219,6 @@ func TestCSVFeederWithEmptyFile(t *testing.T) {
 	}
 }
 
-func TestTemplateSubstitution(t *testing.T) {
-	tests := []struct {
-		name     string
-		template string
-		record   Record
-		want     string
-	}{
-		{
-			name:     "single placeholder",
-			template: "https://api.example.com/users/{{user_id}}",
-			record:   Record{"user_id": "123"},
-			want:     "https://api.example.com/users/123",
-		},
-		{
-			name:     "multiple placeholders",
-			template: "{{base_url}}/{{resource}}/{{id}}",
-			record:   Record{"base_url": "https://api.example.com", "resource": "products", "id": "p456"},
-			want:     "https://api.example.com/products/p456",
-		},
-		{
-			name:     "placeholder in query params",
-			template: "/search?q={{query}}&limit={{limit}}",
-			record:   Record{"query": "test", "limit": "10"},
-			want:     "/search?q=test&limit=10",
-		},
-		{
-			name:     "placeholder in JSON body",
-			template: `{"user_id":"{{user_id}}","email":"{{email}}"}`,
-			record:   Record{"user_id": "789", "email": "test@example.com"},
-			want:     `{"user_id":"789","email":"test@example.com"}`,
-		},
-		{
-			name:     "missing placeholder field",
-			template: "https://api.example.com/users/{{missing_field}}",
-			record:   Record{"user_id": "123"},
-			want:     "https://api.example.com/users/{{missing_field}}",
-		},
-		{
-			name:     "no placeholders",
-			template: "https://api.example.com/static",
-			record:   Record{"user_id": "123"},
-			want:     "https://api.example.com/static",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := SubstitutePlaceholders(tt.template, tt.record)
-			if got != tt.want {
-				t.Errorf("SubstitutePlaceholders() = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestFeederContextCancellation(t *testing.T) {
 	dir := t.TempDir()
 	csvPath := filepath.Join(dir, "data.csv")
@@ -294,5 +239,23 @@ func TestFeederContextCancellation(t *testing.T) {
 	_, err = feeder.Next(ctx)
 	if err != context.Canceled {
 		t.Errorf("Next() with cancelled context error = %v, want context.Canceled", err)
+	}
+}
+
+func TestJSONFeederKeepsNumbersAsWritten(t *testing.T) {
+	jsonPath := filepath.Join(t.TempDir(), "ids.json")
+	if err := os.WriteFile(jsonPath, []byte(`[{"user_id": 1234567, "price": 19.5}]`), 0644); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+	feeder, err := NewJSONFeeder(jsonPath)
+	if err != nil {
+		t.Fatalf("NewJSONFeeder() error = %v", err)
+	}
+	record, err := feeder.Next(context.Background())
+	if err != nil {
+		t.Fatalf("Next() error = %v", err)
+	}
+	if record["user_id"] != "1234567" || record["price"] != "19.5" {
+		t.Errorf("numbers changed: %v", record)
 	}
 }

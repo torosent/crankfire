@@ -6,15 +6,16 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/torosent/crankfire/internal/auth"
 	"github.com/torosent/crankfire/internal/config"
 	"github.com/torosent/crankfire/internal/extractor"
 	"github.com/torosent/crankfire/internal/httpclient"
 	"github.com/torosent/crankfire/internal/runner"
-	"github.com/torosent/crankfire/internal/variables"
 )
 
 type endpointTemplate struct {
@@ -31,7 +32,7 @@ type endpointSelector struct {
 	mu          sync.Mutex
 }
 
-func newEndpointSelector(cfg *config.Config) (*endpointSelector, error) {
+func newEndpointSelector(cfg *config.Config, provider auth.Provider, feeder httpclient.Feeder) (*endpointSelector, error) {
 	if len(cfg.Endpoints) == 0 {
 		return nil, nil
 	}
@@ -39,7 +40,7 @@ func newEndpointSelector(cfg *config.Config) (*endpointSelector, error) {
 	templates := make([]*endpointTemplate, 0, len(cfg.Endpoints))
 	total := 0
 	for idx, ep := range cfg.Endpoints {
-		tmpl, err := buildEndpointTemplate(cfg, ep)
+		tmpl, err := buildEndpointTemplate(cfg, ep, provider, feeder)
 		if err != nil {
 			name := ep.Name
 			if strings.TrimSpace(name) == "" {
@@ -64,7 +65,7 @@ func newEndpointSelector(cfg *config.Config) (*endpointSelector, error) {
 	}, nil
 }
 
-func buildEndpointTemplate(cfg *config.Config, ep config.Endpoint) (*endpointTemplate, error) {
+func buildEndpointTemplate(cfg *config.Config, ep config.Endpoint, provider auth.Provider, feeder httpclient.Feeder) (*endpointTemplate, error) {
 	weight := ep.Weight
 	if weight <= 0 {
 		weight = 1
@@ -104,7 +105,7 @@ func buildEndpointTemplate(cfg *config.Config, ep config.Endpoint) (*endpointTem
 		BodyFile:  bodyFile,
 	}
 
-	builder, err := httpclient.NewRequestBuilder(endpointCfg)
+	builder, err := newHTTPRequestBuilder(endpointCfg, provider, feeder)
 	if err != nil {
 		return nil, err
 	}
@@ -144,8 +145,17 @@ func resolveEndpointURL(base string, ep config.Endpoint) (string, error) {
 		return "", fmt.Errorf("invalid endpoint path %q: %w", ep.Path, err)
 	}
 	resolved := baseURL.ResolveReference(rel)
-	return resolved.String(), nil
+	// String() percent-encodes the braces of {{placeholders}} in the path;
+	// put them back or they are never filled in.
+	return escapedPlaceholder.ReplaceAllStringFunc(resolved.String(), func(m string) string {
+		if raw, err := url.PathUnescape(m); err == nil {
+			return raw
+		}
+		return m
+	}), nil
 }
+
+var escapedPlaceholder = regexp.MustCompile(`%7B%7B.*?%7D%7D`)
 
 func mergeHeaders(base map[string]string, overrides map[string]string) map[string]string {
 	if len(base) == 0 && len(overrides) == 0 {
@@ -223,12 +233,6 @@ func (e *endpointSelectionRequester) Do(ctx context.Context) error {
 	}
 	if tmpl := endpointFromContext(ctx); tmpl != nil {
 		return e.next.Do(ctx)
-	}
-
-	// Create a variable store for this worker if not already present
-	if variables.FromContext(ctx) == nil {
-		store := variables.NewStore()
-		ctx = variables.NewContext(ctx, store)
 	}
 
 	tmpl := e.selector.pickTemplate()

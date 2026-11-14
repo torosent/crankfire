@@ -919,48 +919,6 @@ func buildGRPCConfig(settings map[string]interface{}) (GRPCConfig, error) {
 	return grpc, nil
 }
 
-// parseHARFilter parses a HAR filter string and returns a map representation.
-// Format examples:
-//   - "host:example.com"
-//   - "host:api.example.com,cdn.example.com"
-//   - "method:GET"
-//   - "method:GET,POST"
-//   - "host:example.com;method:GET,POST"
-func parseHARFilter(filter string) map[string][]string {
-	opts := make(map[string][]string)
-
-	if filter == "" {
-		return opts
-	}
-
-	parts := strings.Split(filter, ";")
-	for _, part := range parts {
-		kv := strings.SplitN(part, ":", 2)
-		if len(kv) != 2 {
-			continue
-		}
-		key := strings.TrimSpace(strings.ToLower(kv[0]))
-		value := strings.TrimSpace(kv[1])
-
-		switch key {
-		case "host":
-			hosts := strings.Split(value, ",")
-			for i := range hosts {
-				hosts[i] = strings.TrimSpace(hosts[i])
-			}
-			opts["hosts"] = hosts
-		case "method":
-			methods := strings.Split(value, ",")
-			for i := range methods {
-				methods[i] = strings.TrimSpace(methods[i])
-			}
-			opts["methods"] = methods
-		}
-	}
-
-	return opts
-}
-
 func parseTracingConfig(value interface{}) (TracingConfig, error) {
 	if value == nil {
 		return TracingConfig{}, nil
@@ -1020,8 +978,7 @@ func buildTracingConfig(settings map[string]interface{}) (TracingConfig, error) 
 }
 
 // loadHAREndpoints validates that the HAR file exists and is readable JSON.
-// The actual HAR conversion to endpoints happens separately via LoadHAREndpointsFromConfig function
-// which is called from the cmd layer to avoid circular import issues.
+// The actual HAR conversion to endpoints happens in the cli package.
 func loadHAREndpoints(cfg *Config) error {
 	if strings.TrimSpace(cfg.HARFile) == "" {
 		return nil

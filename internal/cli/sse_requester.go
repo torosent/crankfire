@@ -2,8 +2,9 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strconv"
+	"net"
 	"time"
 
 	"github.com/torosent/crankfire/internal/auth"
@@ -69,12 +70,13 @@ func (s *sseRequester) Do(ctx context.Context) error {
 		return s.helper.recordError(start, meta, "sse", "auth", err)
 	}
 
+	// Key the pool before adding trace headers: they differ on every request
+	// and would open (and leak) a new connection each time.
+	poolKey := pool.MakePoolKey(target, requestHeaders)
+
 	if s.helper.shouldPropagate() {
 		tracing.InjectHTTPHeaders(ctx, requestHeaders)
 	}
-
-	// Get or create client from pool
-	poolKey := pool.MakePoolKey(target, requestHeaders)
 
 	factory := func() pool.Poolable {
 		sseCfg := sse.Config{
@@ -114,6 +116,7 @@ func (s *sseRequester) Do(ctx context.Context) error {
 	}
 
 	var opErr error
+	readTimedOut := false
 
 	for eventsRead < maxEvents {
 		_, err := client.ReadEvent(readCtx)
@@ -131,8 +134,12 @@ func (s *sseRequester) Do(ctx context.Context) error {
 				continue
 			}
 
-			// Check if it's a context error (expected timeout/cancellation)
-			if readCtx.Err() != nil {
+			// Timeout or cancellation is the normal end of a read. The HTTP
+			// client's own timer (same length, started at connect) fires just
+			// before readCtx, so check the error itself too.
+			var netErr net.Error
+			if readCtx.Err() != nil || (errors.As(err, &netErr) && netErr.Timeout()) {
+				readTimedOut = true
 				break
 			}
 			// Other errors are failures
@@ -167,8 +174,12 @@ func (s *sseRequester) Do(ctx context.Context) error {
 		return opErr
 	}
 
-	// If successful, return client to pool
-	s.connPool.Put(poolKey, client)
+	// If successful, return client to pool. A stream cut by the timeout is dead.
+	if readTimedOut {
+		client.Close()
+	} else {
+		s.connPool.Put(poolKey, client)
+	}
 
 	s.collector.RecordRequest(latency, nil, meta)
 	return nil
@@ -177,14 +188,4 @@ func (s *sseRequester) Do(ctx context.Context) error {
 // Close releases all SSE connections held in the connection pool.
 func (s *sseRequester) Close() error {
 	return s.connPool.Close()
-}
-
-func sseStatusCode(err error) string {
-	if err == nil {
-		return ""
-	}
-	if statusErr, ok := err.(*sse.StatusError); ok {
-		return strconv.Itoa(statusErr.Code)
-	}
-	return fallbackStatusCode(err)
 }

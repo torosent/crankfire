@@ -46,8 +46,9 @@ func (o *Options) normalize() {
 			if rps <= 0 {
 				return rate.NewLimiter(rate.Inf, 0)
 			}
-			// Burst equal to rps to smooth pacing under concurrency.
-			return rate.NewLimiter(rate.Limit(rps), rps)
+			// Small burst (10ms worth): a burst of rps would send a full extra
+			// second of requests at the start.
+			return rate.NewLimiter(rate.Limit(rps), max(1, rps/100))
 		}
 	}
 	if o.ArrivalModel == "" {
@@ -61,9 +62,10 @@ func (o *Options) normalize() {
 type LoadPatternType string
 
 const (
-	LoadPatternTypeRamp  LoadPatternType = "ramp"
-	LoadPatternTypeStep  LoadPatternType = "step"
-	LoadPatternTypeSpike LoadPatternType = "spike"
+	LoadPatternTypeRamp     LoadPatternType = "ramp"
+	LoadPatternTypeStep     LoadPatternType = "step"
+	LoadPatternTypeSpike    LoadPatternType = "spike"
+	LoadPatternTypeConstant LoadPatternType = "constant"
 )
 
 type LoadPattern struct {

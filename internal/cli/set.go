@@ -166,16 +166,11 @@ func setRun(ctx context.Context, st store.Store, args []string, stdout, stderr i
 		fmt.Fprintf(stderr, "parse --override: %v\n", err)
 		return ExitUsage
 	}
-	// Persist the in-memory mutation only for this run; write to a temp ID-less buffer is overkill.
-	// We pass the mutated `set` to the runner via a one-shot saved copy under a transient ID? No —
-	// runner reads from store. Save with the same ID (idempotent) so the run honors the overrides.
-	if err := st.SaveSet(ctx, set); err != nil {
-		fmt.Fprintf(stderr, "save set with overrides: %v\n", err)
-		return ExitUsage
-	}
-
+	// The file name is the ID; the id: field inside may be missing or stale.
+	set.ID = setID
+	// The flags apply to this run only: the saved set is not touched.
 	r := setrunner.New(st, &cliBuilderAdapter{})
-	run, err := r.Run(ctx, setID, nil)
+	run, err := r.RunSet(ctx, set, nil)
 	if err != nil {
 		fmt.Fprintf(stderr, "run set: %v\n", err)
 		return ExitRunnerError

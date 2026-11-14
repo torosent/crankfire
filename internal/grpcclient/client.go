@@ -53,46 +53,6 @@ type Config struct {
 	Insecure bool
 }
 
-// NewClient creates a new gRPC client with the given configuration
-func NewClient(cfg Config) (*Client, error) {
-	md := metadata.New(cfg.Metadata)
-	if cfg.Timeout == 0 {
-		cfg.Timeout = 30 * time.Second
-	}
-	client := &Client{
-		target:     cfg.Target,
-		service:    cfg.Service,
-		method:     cfg.Method,
-		md:         md,
-		useTLS:     cfg.UseTLS,
-		insecure:   cfg.Insecure,
-		lastStatus: "UNSET",
-		metrics:    clientmetrics.New(),
-	}
-	return client, nil
-}
-
-// Connect establishes a gRPC connection
-func (c *Client) Connect(ctx context.Context) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.conn != nil {
-		return fmt.Errorf("client already connected")
-	}
-
-	conn, err := Dial(ctx, Config{
-		Target:   c.target,
-		UseTLS:   c.useTLS,
-		Insecure: c.insecure,
-		Timeout:  30 * time.Second, // Default, though Dial context governs timeout
-	})
-	if err != nil {
-		return err
-	}
-	c.conn = conn
-	return nil
-}
-
 // Dial establishes a gRPC connection based on configuration
 func Dial(ctx context.Context, cfg Config) (*grpc.ClientConn, error) {
 	var opts []grpc.DialOption
@@ -189,18 +149,6 @@ func (c *Client) Invoke(ctx context.Context, req proto.Message, resp proto.Messa
 		return fmt.Errorf("RPC call failed: %w", err)
 	}
 	return nil
-}
-
-// Close closes the gRPC connection
-func (c *Client) Close() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.conn == nil {
-		return nil
-	}
-	err := c.conn.Close()
-	c.conn = nil
-	return err
 }
 
 // Metrics returns the current metrics (thread-safe)

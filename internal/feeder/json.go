@@ -27,6 +27,7 @@ func NewJSONFeeder(path string) (*JSONFeeder, error) {
 
 	var rawRecords []map[string]interface{}
 	decoder := json.NewDecoder(file)
+	decoder.UseNumber() // keep 1234567 as "1234567", not "1.234567e+06"
 	if err := decoder.Decode(&rawRecords); err != nil {
 		return nil, fmt.Errorf("decode JSON: %w", err)
 	}

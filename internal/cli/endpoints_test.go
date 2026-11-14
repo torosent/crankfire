@@ -32,7 +32,7 @@ func TestBuildEndpointTemplateOverrides(t *testing.T) {
 		},
 	}
 
-	tmpl, err := buildEndpointTemplate(cfg, ep)
+	tmpl, err := buildEndpointTemplate(cfg, ep, nil, nil)
 	if err != nil {
 		t.Fatalf("buildEndpointTemplate error: %v", err)
 	}
@@ -228,30 +228,11 @@ func TestNewEndpointSelector_Errors(t *testing.T) {
 				{Name: "bad", Weight: 0},
 			},
 		}
-		_, err := newEndpointSelector(cfg)
+		_, err := newEndpointSelector(cfg, nil, nil)
 		if err == nil {
 			t.Error("newEndpointSelector(weight=0) error = nil, want error")
 		}
 	})
-}
-
-func TestEndpointSelectionCreatesVariableStore(t *testing.T) {
-	selector := &endpointSelector{
-		templates:   []*endpointTemplate{{name: "only", weight: 1}},
-		totalWeight: 1,
-		rnd:         randFixed(),
-	}
-
-	storeRecorder := &variableStoreRecorder{}
-	wrapped := selector.Wrap(storeRecorder)
-
-	if err := wrapped.Do(context.Background()); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if storeRecorder.store == nil {
-		t.Fatalf("expected variable store in context, got nil")
-	}
 }
 
 func TestEndpointSelectionReusesVariableStore(t *testing.T) {
