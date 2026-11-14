@@ -2,301 +2,104 @@
 layout: default
 title: Request Chaining
 ---
+{% raw %}
 
 # Request Chaining
 
-Request chaining allows you to extract values from API responses and use them in subsequent requests. This is essential for testing workflows where later requests depend on data returned by earlier ones.
-
-Common use cases:
-- Create a resource and use its ID in subsequent requests
-- Extract authentication tokens and pass them to other endpoints
-- Extract session IDs for stateful testing
-- Coordinate multi-step API workflows in a single load test
-
-## How It Works
-
-1. **Extract**: Define extractors on an endpoint to pull values from its response
-2. **Store**: Extracted values are stored in a per-worker variable store
-3. **Use**: Reference extracted values in URLs, headers, and bodies of subsequent requests using `{{variable_name}}` placeholders
-4. **Fallback**: Optionally provide default values with `{{variable_name|default_value}}` syntax
-
-## Extractor Configuration
-
-Extractors are defined at the endpoint level in the `extractors` array. Each extractor specifies:
-
-- **jsonpath** or **regex**: The extraction pattern (mutually exclusive)
-- **var**: The variable name to store the extracted value
-- **on_error** (optional, default false): Whether to extract from error responses (4xx/5xx)
-
-### JSON Path Extraction
-
-Extract values from JSON responses using JSON path notation.
-
-```yaml
-endpoints:
-  - name: create-user
-    path: /users
-    method: POST
-    body: '{"name":"Alice","email":"alice@example.com"}'
-    extractors:
-      - jsonpath: "id"                    # Simple field
-        var: "user_id"
-      - jsonpath: "metadata.session_id"   # Nested field
-        var: "session_id"
-      - jsonpath: "items.0.sku"          # Array index
-        var: "first_sku"
-      - jsonpath: "$"                    # Entire JSON object
-        var: "full_response"
-```
-
-JSON path formats supported:
-- `id` or `$.id` – Top-level field
-- `user.profile.name` or `$.user.profile.name` – Nested fields
-- `items.0.id` – Array access by index
-- `$` – Entire response as a string
-
-### Regex Extraction
-
-Extract values from any response using regular expressions with capture groups.
-
-```yaml
-endpoints:
-  - name: get-token
-    path: /auth/token
-    method: GET
-    extractors:
-      - regex: '"access_token":"([^"]+)"'  # Capture first group
-        var: "token"
-      - regex: '\d+'                       # Match first number
-        var: "count"
-```
-
-If your regex has capture groups (parentheses), the first capture group is extracted. If no capture group exists, the entire match is extracted.
-
-## Using Extracted Values
-
-Once extracted, values are available as placeholders in:
-- **URL paths and query strings**
-- **HTTP headers**
-- **Request bodies**
-
-### Example: Complete Workflow
+Request chaining takes a value from one response and uses it in later requests, for example a token from a login call, the ID of a newly created resource, or a session ID. It works only in **HTTP** mode with [weighted endpoints](configuration.md#weighted-endpoints).
 
 ```yaml
 target: https://api.example.com
-
-endpoints:
-  - name: create-order
-    path: /orders
-    method: POST
-    weight: 10
-    body: '{"items":2,"total":99.99}'
-    extractors:
-      - jsonpath: "id"
-        var: "order_id"
-      - jsonpath: "confirmation_code"
-        var: "confirmation"
-
-  - name: get-order
-    path: /orders/{{order_id}}
-    method: GET
-    weight: 5
-    extractors:
-      - jsonpath: "status"
-        var: "order_status"
-
-  - name: confirm-order
-    path: /orders/{{order_id}}/confirm
-    method: POST
-    weight: 1
-    body: '{"code":"{{confirmation|default-code}}"}'
-    headers:
-      X-Order-Status: "{{order_status}}"
-
 concurrency: 10
-rate: 50
 duration: 1m
+endpoints:
+  - name: login
+    weight: 1
+    method: POST
+    path: /auth/login
+    headers: { Content-Type: application/json }
+    body: '{"email":"perf@example.com","password":"secret"}'
+    extractors:
+      - { jsonpath: $.token, var: auth_token }
+      - { jsonpath: $.user.id, var: user_id }
+
+  - name: profile
+    weight: 5
+    path: /users/{{user_id|me}}
+    headers:
+      Authorization: "Bearer {{auth_token|}}"
 ```
 
-In this example:
-1. `create-order` extracts `order_id` and `confirmation` from the response
-2. `get-order` uses `{{order_id}}` in its URL path
-3. `confirm-order` uses both `{{order_id}}` in the URL and `{{confirmation|default-code}}` in the body (with a default fallback)
-4. `confirm-order` also uses `{{order_status}}` (extracted by `get-order`) in a header
+## Placeholders
 
-## Default Values
+- `{{name}}`: the value of `name`. If nothing matches, it becomes an empty string.
+- `{{name|fallback}}`: the value of `name`, or `fallback` if no value is found.
+- `{{name|}}`: the value of `name`, or an explicitly empty string.
 
-If an extracted value is not found (extraction fails), the variable remains empty. You can specify a fallback default using the `|` syntax:
+When a request is built, each placeholder is looked up in this order:
 
-```yaml
-# Without default - placeholder stays as-is if extraction fails
-path: /users/{{user_id}}
+1. **Variables extracted earlier by this worker**
+2. **Fields of the current feeder record** (see [Data Feeders](feeders.md))
+3. **The default** after `|`
 
-# With default - use "anonymous" if user_id extraction fails
-path: /users/{{user_id|anonymous}}
+Values are inserted as-is, with no URL or JSON escaping.
 
-# Empty default - remove placeholder if not found
-value: "Bearer {{token|}}"  # Results in "Bearer " if token not found
-```
+Placeholders work in URLs, endpoint `path`s, header values and bodies. Names are matched exactly; spaces inside the braces are not trimmed. Go-template syntax such as `{{.field}}` is **not** supported in requests.
 
-Default values work with both extracted variables and feeder data.
+## Extractors
 
-## Extraction from Error Responses
+You attach extractors to an endpoint. Each extractor needs exactly one of `jsonpath` or `regex`, plus a `var` name. The name must be a valid identifier: letters, digits and underscores, and it cannot start with a digit.
 
-By default, extractors only run on successful responses (2xx status codes). To extract from error responses (4xx/5xx), set `on_error: true`:
+| Key | Description |
+|-----|-------------|
+| `jsonpath` | A path in [gjson](https://github.com/tidwall/gjson/blob/master/SYNTAX.md) syntax. A leading `$.` is stripped, and `$` on its own means the whole document. |
+| `regex` | Go regular expression. The first capture group is extracted, or the whole match when the pattern has no groups. |
+| `var` | Variable to store the value in. |
+| `on_error` | Also run this extractor when the response status is `>= 400`. Default `false`. |
 
 ```yaml
 extractors:
-  - jsonpath: "error_code"
-    var: "error_code"
-    on_error: true  # Extract even from 400/500 responses
+  - jsonpath: id                 # top-level field
+    var: order_id
+  - jsonpath: $.items.0.sku      # array index
+    var: first_sku
+  - jsonpath: $                  # whole body
+    var: raw
+  - regex: 'session=([a-f0-9]+)'
+    var: session_id
+  - jsonpath: error.code
+    var: last_error
+    on_error: true
 ```
 
-This is useful for capturing error IDs, error messages, or retry tokens from failed responses.
+When extractors run:
 
-## Variable Scope and Persistence
+- Extractors run after the response body has been read. Only the first **1 MB** of the body is examined.
+- On responses with status **below 400**, every extractor runs. On status `>= 400`, only those with `on_error: true` run.
+- Objects and arrays are stored as raw JSON text. Numbers are stored in their shortest form (`1500.0` becomes `1500`), and `null` becomes an empty string.
 
-- **Per-worker**: Each worker (concurrent thread) has its own variable store
-- **Persistent within worker**: Variables persist across all requests made by a single worker
-- **Isolated**: Workers don't share variables with each other
+> **Note:** If an extractor finds nothing (path missing or regex no match), Crankfire prints a warning to stderr and stores an **empty string**. That empty value counts as "set", so later lookups return `""` and **ignore** any `|default`. Defaults apply only while a variable has never been set in that worker.
 
-This means:
-- Worker 1 can extract `user_id=123` and use it in all its subsequent requests
-- Worker 2 can extract `user_id=456` independently
-- Variables are cleared when a worker finishes
+## Scope: one store per worker
 
-## Combining with Feeders
+Each worker goroutine (`concurrency` of them) has its own variable store, which lasts for the whole run.
 
-Extractors and feeders both provide placeholders. If a value exists in both, **extractors take precedence**:
+- A value one worker extracts is visible to that worker's later requests only.
+- Workers never share variables. Ten workers means ten independent sessions.
+- A later extraction to the same `var` overwrites the earlier value.
 
-```yaml
-feeder:
-  path: ./users.csv  # Contains: user_id, email
+## Ordering: endpoints are picked at random
 
-endpoints:
-  - name: create-session
-    path: /users/{{user_id}}  # Uses feeder user_id
-    method: POST
-    extractors:
-      - jsonpath: "session_id"
-        var: "user_id"  # Overwrites feeder user_id
+Endpoints are chosen **at random by weight for each request**. There is no "step 1, then step 2". A worker's first request might be `profile` before it has ever run `login`. Design for that:
 
-  - name: use-session
-    path: /sessions/{{user_id}}  # Uses extracted session_id
-    method: GET
-```
+- **Give dependent requests safe defaults**, such as `{{user_id|me}}` or `{{auth_token|}}`, so they still produce a valid, if unauthenticated, request.
+- **Keep producer endpoints at a low weight.** Once a worker has a value it keeps it, so occasional re-logins are enough.
+- **Expect some early failures.** The first few requests per worker may fail until a value exists. Allow for that in your [thresholds](thresholds.md).
+- **For an auth token, prefer the `auth:` block** ([Authentication](authentication.md)). It fetches the token once on first use and shares it across all workers, so you don't need chaining at all.
 
-## Best Practices
+## Limits
 
-1. **Use descriptive variable names**: `{{order_id}}` is clearer than `{{id}}`
-2. **Test extraction patterns locally**: Use `jq` or regex testers before adding to config
-3. **Handle missing values**: Always consider using defaults for optional extractions
-4. **Verify extraction works**: Check logs for "JSONPath not found" warnings
-5. **Keep JSON paths simple**: Complex nested paths are fragile; consider API redesign if needed
-6. **Use weights**: Coordinate request frequency so dependent requests run after their dependencies
-7. **Regex capture groups**: Always use `()` for single captures to avoid extracting too much
-
-## Limitations
-
-- **JSON only for jsonpath**: The `jsonpath` extractor requires valid JSON responses
-- **Single value per extractor**: Each extractor extracts one value; use multiple extractors for multiple values
-- **No transformation**: Extracted values are used as-is; no post-processing is available
-- **No cross-worker sharing**: Variables are isolated per worker and cannot be shared between workers
-- **No nested variable references**: You cannot use `{{outer_{{inner}}}}` syntax
-- **Regex is greedy**: Use non-greedy patterns `(.*?)` if needed to avoid overmatching
-
-## Example: Multi-Step Order Workflow
-
-```yaml
-target: https://orders-api.example.com
-
-endpoints:
-  # Step 1: Create order and extract ID
-  - name: create-order
-    path: /v1/orders
-    method: POST
-    weight: 10
-    body: |
-      {
-        "customer_id": "{{customer_id}}",
-        "items": [
-          {"sku": "WIDGET-1", "qty": 2},
-          {"sku": "GADGET-1", "qty": 1}
-        ]
-      }
-    extractors:
-      - jsonpath: "order_id"
-        var: order_id
-      - jsonpath: "invoice_url"
-        var: invoice_url
-
-  # Step 2: Get order details and extract shipment ID
-  - name: get-order
-    path: /v1/orders/{{order_id}}
-    method: GET
-    weight: 5
-    extractors:
-      - jsonpath: "shipment.tracking_number"
-        var: tracking_number
-        on_error: false
-
-  # Step 3: Confirm shipment
-  - name: confirm-shipment
-    path: /v1/orders/{{order_id}}/shipment/confirm
-    method: PATCH
-    weight: 3
-    body: |
-      {
-        "tracking": "{{tracking_number|pending}}",
-        "notification_url": "{{invoice_url}}"
-      }
-
-  # Step 4: Get final status
-  - name: get-final-status
-    path: /v1/orders/{{order_id}}/status
-    method: GET
-    weight: 1
-
-feeder:
-  path: ./customers.csv
-  type: csv
-
-concurrency: 20
-rate: 100
-duration: 5m
-```
-
-Running this configuration will:
-1. Extract `order_id` and `invoice_url` from the create response
-2. Use `{{order_id}}` in subsequent requests to the correct endpoint
-3. Extract `tracking_number` from the order details
-4. Pass tracking information to the confirm endpoint with a fallback to "pending"
-5. Use the same `order_id` across all four requests
-6. Each worker maintains its own `order_id`, so concurrent workers don't interfere
-
-## Debugging Extraction Issues
-
-If extraction isn't working:
-
-1. **Check for "JSONPath not found" warnings** in stderr
-2. **Verify JSON is valid**: Use `jq` to test the path
-3. **Check variable spelling**: `{{user_id}}` ≠ `{{userId}}`
-4. **Test regex separately**: Use an online regex tester
-5. **Enable detailed logging**: Warnings are printed for failed extractions
-6. **Verify endpoint is returning expected data**: Manually call the API to confirm response format
-
-Example testing:
-
-```bash
-# Test JSON path extraction
-curl https://api.example.com/users | jq .id
-
-# Test regex extraction
-curl https://api.example.com/auth | grep -oP '"token":"[^"]+"'
-```
-
-## See Also
-
-- [Data Feeders](feeders.md) – Combine feeders with extractors for powerful data-driven testing
-- [Endpoints](configuration.md#endpoints-and-weights) – Configure multiple endpoints with extraction
-- [Authentication](authentication.md) – Extract auth tokens from login endpoints
+- HTTP only. WebSocket, SSE and gRPC ignore extractors and variables.
+- Values are strings; there is no type conversion or arithmetic.
+- Regexes are compiled on every response, so complex patterns cost CPU at high request rates.
+{% endraw %}
