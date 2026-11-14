@@ -1,59 +1,53 @@
 # Crankfire
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/torosent/crankfire)](https://goreportcard.com/report/github.com/torosent/crankfire)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/torosent/crankfire)](https://github.com/torosent/crankfire/releases)
 [![Go Build](https://github.com/torosent/crankfire/actions/workflows/release.yml/badge.svg)](https://github.com/torosent/crankfire/actions/workflows/release.yml)
 [![codecov](https://codecov.io/gh/torosent/crankfire/branch/main/graph/badge.svg)](https://codecov.io/gh/torosent/crankfire)
 
+Crankfire is a command-line tool for load testing HTTP, WebSocket, SSE and gRPC services.
 
-High-signal load testing for HTTP, WebSocket, SSE, and gRPC from the CLI.
+You describe the traffic you want, using flags or a YAML/JSON file, and Crankfire sends it to your service. It measures response times and errors, and shows the results in the terminal, as JSON, or as an HTML report. Each run tests one protocol. Crankfire is a single program: you do not need a cluster, a server or a web UI.
 
-Crankfire lets you describe realistic workloads against these protocols using one cohesive config model (choose one protocol per run). It’s built for engineers who care about **proper arrival modeling, protocol‑aware metrics, and tight CI/CD integration**—without running a cluster or a web UI.
+**Documentation:** https://torosent.github.io/crankfire/
 
-👉 **Docs:** https://torosent.github.io/crankfire/
+## Why use Crankfire?
 
-## Why Crankfire?
+Use Crankfire when a simple `curl` loop is not enough, but a large load-testing platform is too much.
 
-Use Crankfire when you need more than a simple `curl` loop, but don’t want the overhead of a heavyweight load-testing platform.
+- **Four protocols:** HTTP, WebSocket, SSE and gRPC all use the same configuration format and the same reports.
+- **Realistic traffic:** increase the load step by step, hold it steady, or add short spikes. Requests can arrive at an even rate or at random intervals (Poisson).
+- **Accurate numbers:** latency percentiles (P50, P90, P95, P99), statistics for each endpoint, and error counts grouped by status code.
+- **Live view or JSON:** watch the test in your terminal, or save the results as JSON for scripts and CI.
+- **Authentication and test data:** OAuth2 and static tokens, plus values read from CSV or JSON files.
+- **Request chaining:** take a value from one response (for example a token) and use it in later requests.
+- **HAR import:** record a session in your browser and replay it as a load test.
+- **Saved tests and suites:** keep tests in a terminal UI, group them into suites, compare runs, and run them on a schedule.
+- **One binary:** written in Go, with no runtime dependencies.
 
-- **Multi‑protocol coverage** – HTTP, WebSocket, SSE, and gRPC share the same configuration and reporting engine (select the protocol mode per run).
-- **Realistic traffic patterns** – Ramp/step/spike load phases plus uniform or Poisson arrivals.
-- **Production‑grade metrics** – HDR histogram percentiles (P50/P90/P95/P99), per‑endpoint stats, and protocol‑specific error buckets.
-- **Live dashboard or JSON** – Watch tests in your terminal, or export structured JSON for automation.
-- **Auth & data built‑in** – OAuth2/OIDC helpers and CSV/JSON feeders for realistic test data.
-- **Request chaining** – Extract values from responses (JSON path, regex) and use them in subsequent requests.
-- **HAR import** – Record browser sessions and replay them as load tests with automatic filtering.
-- **Single binary** – Written in Go with minimal runtime dependencies.
-
-See the [full feature overview in the docs](https://torosent.github.io/crankfire/).
-
-## Feature Matrix
+## Feature support
 
 | Feature | HTTP | WebSocket | SSE | gRPC |
 |---------|:----:|:---------:|:---:|:----:|
-| **Basic Load Testing** | ✅ | ✅ | ✅ | ✅ |
-| **Authentication** | ✅ | ✅ | ✅ | ✅ |
-| **Data Feeders** | ✅ | ✅ | ✅ | ✅ |
-| **Request Chaining** | ✅ | — | — | — |
-| **HAR Import** | ✅ | — | — | — |
-| **Thresholds/Assertions** | ✅ | ✅ | ✅ | ✅ |
-| **Retries** | ✅ | ❌ | ❌ | ❌ |
-| **Protocol-Specific Metrics** | - | Messages sent/received, bytes | Events received, bytes | Calls, responses |
-| **Dashboard Support** | ✅ | ✅ | ✅ | ✅ |
-| **HTML Report** | ✅ | ✅ | ✅ | ✅ |
-| **JSON Output** | ✅ | ✅ | ✅ | ✅ |
-| **Rate Limiting** | ✅ | ✅ | ✅ | ✅ |
-| **Arrival Models** | ✅ | ✅ | ✅ | ✅ |
-| **Load Patterns** | ✅ | ✅ | ✅ | ✅ |
-| **Multiple HTTP Endpoints** | ✅ | — | — | — |
+| Basic load testing | ✅ | ✅ | ✅ | ✅ |
+| Rate limits, arrival models, load patterns | ✅ | ✅ | ✅ | ✅ |
+| Authentication | ✅ | ✅ | ✅ | ✅ |
+| Data feeders | ✅ | ✅ | ✅ | ✅ |
+| Request chaining | ✅ | — | — | — |
+| Several weighted endpoints | ✅ | — | — | — |
+| HAR import | ✅ | — | — | — |
+| Retries | ✅ | — | — | — |
+| Thresholds (pass/fail rules) | ✅ | ✅ | ✅ | ✅ |
+| Live dashboard, JSON and HTML reports | ✅ | ✅ | ✅ | ✅ |
+| OpenTelemetry tracing | ✅ | ✅ | ✅ | ✅ |
+| Extra protocol metrics | — | Messages and bytes sent/received | Events and bytes received | Messages and bytes sent/received, status code |
 
-## Use Cases
+## What you can use it for
 
-- **Performance Testing**: Measure API response times and throughput
-- **Load Testing**: Simulate concurrent users and high traffic
-- **Stress Testing**: Find breaking points (histogram percentile accuracy)
-- **CI/CD Integration**: Automated performance regression testing with JSON output
-- **Failure Analysis**: Status bucket breakdown highlights protocol-specific failure patterns
+- **Performance testing:** measure response times and throughput.
+- **Load testing:** simulate many users at the same time.
+- **Stress testing:** find the point where your service starts to fail.
+- **CI/CD checks:** fail a build when latency or errors get worse.
+- **Failure analysis:** see which status codes and errors appear under load.
 
 ## Installation
 
@@ -63,19 +57,24 @@ See the [full feature overview in the docs](https://torosent.github.io/crankfire
 brew tap torosent/crankfire
 brew install crankfire
 ```
+
 ### Docker
 
 ```bash
 docker run ghcr.io/torosent/crankfire --target https://example.com --total 100
 ```
 
-### Go Install
+### Go
 
 ```bash
 go install github.com/torosent/crankfire/cmd/crankfire@latest
 ```
 
-### Build from Source
+### Release archives
+
+Download `crankfire_<os>_<arch>.tar.gz` (or `.zip` for Windows) from the [releases page](https://github.com/torosent/crankfire/releases).
+
+### Build from source
 
 ```bash
 git clone https://github.com/torosent/crankfire.git
@@ -83,15 +82,15 @@ cd crankfire
 go build -o build/crankfire ./cmd/crankfire
 ```
 
-## Quick Start
+## Quick start
 
-### One‑liner
+Send 100 requests with 10 workers:
 
 ```bash
 crankfire --target https://example.com --concurrency 10 --total 100
 ```
 
-### With Dashboard
+Send 100 requests per second for 30 seconds and watch the live dashboard:
 
 ```bash
 crankfire \
@@ -102,7 +101,7 @@ crankfire \
   --dashboard
 ```
 
-### POST Request
+Send POST requests with a JSON body:
 
 ```bash
 crankfire \
@@ -113,83 +112,83 @@ crankfire \
   --total 100
 ```
 
-### With a Config File
+Use a config file:
 
 ```bash
 crankfire --config loadtest.yaml
 ```
 
-### Generate HTML Report
+Save an HTML report:
 
 ```bash
 crankfire --target https://example.com --total 1000 --html-output report.html
 ```
 
-### From a HAR File
-
-Record a browser session and replay it as a load test:
+Replay a browser recording (HAR file):
 
 ```bash
 crankfire --har recording.har --har-filter "host:api.example.com" --total 100
 ```
 
-See the [Getting Started guide](https://torosent.github.io/crankfire/getting-started.html) for a step‑by‑step walkthrough.
+The [Getting Started guide](https://torosent.github.io/crankfire/getting-started.html) explains each step in more detail.
 
-## Command-Line Options (Overview)
+## Command-line options
+
+Note that headers use `Key=Value`, not `Key: Value`.
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--target` | Target URL to test | (required unless using `--har`) |
-| `--method` | HTTP method (GET, POST, PUT, DELETE, PATCH, etc.; case-insensitive, defaults to GET when omitted) | GET |
-| `--header` | Add HTTP header (`Key=Value`, repeatable; last wins) | - |
-| `--body` | Inline request body | - |
-| `--body-file` | Path to request body file | - |
-| `--concurrency`, `-c` | Number of parallel workers | 1 |
-| `--rate`, `-r` | Requests per second (0=unlimited) | 0 |
-| `--duration`, `-d` | Test duration (e.g., 30s, 1m) | 0 |
-| `--total`, `-t` | Total number of requests | 0 |
-| `--timeout` | Per-request timeout | 30s |
-| `--graceful-shutdown` | Max time to wait for in-flight requests after test ends (0=default 5s, negative=cancel immediately) | 5s |
-| `--retries` | Number of retry attempts | 0 |
-| `--arrival-model` | Arrival model (`uniform` or `poisson`) | uniform |
-| `--html-output` | Generate HTML report to the specified file path | - |
-| `--json-output` | Output results as JSON | false |
-| `--dashboard` | Show live terminal dashboard | false |
-| `--log-errors` | Log each failed request to stderr | false |
-| `--config` | Path to config file (JSON/YAML) | - |
-| `--har` | Path to HAR file to import as endpoints | - |
-| `--har-filter` | Filter HAR entries (e.g., `host:example.com` or `method:GET,POST`) | - |
-| `--feeder-path` | Path to CSV/JSON file for per-request data injection | - |
-| `--feeder-type` | Feeder file type (`csv` or `json`) | - |
-| `--protocol` | Protocol mode (`http`, `websocket`, or `sse`) | http |
-| `--ws-messages` | WebSocket messages to send (repeatable) | - |
-| `--ws-message-interval` | Interval between WebSocket messages | 0 |
-| `--ws-receive-timeout` | WebSocket receive timeout | 10s |
-| `--ws-handshake-timeout` | WebSocket handshake timeout | 30s |
-| `--sse-read-timeout` | SSE read timeout | 30s |
-| `--sse-max-events` | Max SSE events to read (0=unlimited) | 0 |
-| `--grpc-proto-file` | Path to .proto file for gRPC | - |
-| `--grpc-service` | gRPC service name (e.g., `myapp.Service`) | - |
-| `--grpc-method` | gRPC method name (e.g., `GetData`) | - |
-| `--grpc-message` | JSON message payload for gRPC (supports templates) | - |
-| `--grpc-metadata` | gRPC metadata (repeatable, `Key=Value`) | - |
-| `--grpc-timeout` | gRPC call timeout | 30s |
+| `--target` | URL to test (`host:port` for gRPC). Not needed with `--har`. | — |
+| `--method` | HTTP method, such as GET, POST, PUT or DELETE | GET |
+| `--header` | Add an HTTP header as `Key=Value`. You can repeat this flag. | — |
+| `--body` | Request body as text | — |
+| `--body-file` | Read the request body from a file | — |
+| `--concurrency`, `-c` | Number of workers that send requests in parallel | 1 |
+| `--rate`, `-r` | Maximum requests per second (0 = no limit) | 0 |
+| `--duration`, `-d` | How long the test runs, such as `30s` or `1m` | 0 (no limit) |
+| `--total`, `-t` | Total number of requests | 0 (no limit) |
+| `--timeout` | Timeout for each HTTP request | 30s |
+| `--graceful-shutdown` | How long to wait for running requests when the test ends normally (negative = stop at once). `Ctrl+C` always stops them at once. | 5s |
+| `--retries` | How many times to retry a failed HTTP request (status 429, 5xx or network errors; timeouts are not retried) | 0 |
+| `--arrival-model` | How requests are spaced: `uniform` (even) or `poisson` (random) | uniform |
+| `--dashboard` | Show the live terminal dashboard | false |
+| `--json-output` | Print the results as JSON | false |
+| `--html-output` | Write an HTML report to this file | — |
+| `--log-errors` | Print each failed HTTP request to stderr | false |
+| `--config` | Path to a YAML or JSON config file | — |
+| `--har` | HAR file to import as endpoints | — |
+| `--har-filter` | Which HAR entries to keep, such as `host:example.com` or `method:GET,POST` | — |
+| `--feeder-path` | CSV or JSON file with test data | — |
+| `--feeder-type` | Type of the feeder file: `csv` or `json` | — |
+| `--protocol` | `http`, `websocket`, `sse` or `grpc` | http |
+| `--ws-messages` | WebSocket message to send. You can repeat this flag. Put JSON messages (with quotes or commas) in the config file. | — |
+| `--ws-message-interval` | Pause after each WebSocket message | 0 |
+| `--ws-receive-timeout` | How long to read WebSocket replies (0 = do not read) | 0 |
+| `--ws-handshake-timeout` | Timeout for the WebSocket handshake | 30s |
+| `--sse-read-timeout` | How long to read SSE events in each request | 0 (stream ends after 30s) |
+| `--sse-max-events` | Maximum SSE events per request (0 means 100) | 0 |
+| `--grpc-proto-file` | `.proto` file that defines the service | — |
+| `--grpc-service` | Full service name, such as `myapp.OrderService` | — |
+| `--grpc-method` | Method name, such as `CreateOrder` | — |
+| `--grpc-message` | Request message as JSON | — |
+| `--grpc-metadata` | gRPC metadata as `key=value` | — |
+| `--grpc-timeout` | Timeout for each gRPC call | none |
 | `--grpc-tls` | Use TLS for gRPC | false |
-| `--grpc-insecure` | Skip TLS certificate verification | false |
-| `--threshold` | Performance threshold (repeatable, e.g., `http_req_duration:p95 < 500`) | - |
-| `--tracing-endpoint` | OTLP endpoint for trace export (e.g., `localhost:4317`) | - |
+| `--grpc-insecure` | With `--grpc-tls`, do not check the server certificate | false |
+| `--threshold` | A pass/fail rule, such as `http_req_duration:p95 < 500`. You can repeat this flag. | — |
+| `--tracing-endpoint` | OTLP collector address, such as `localhost:4317` | — |
 | `--tracing-protocol` | OTLP transport: `grpc` or `http` | grpc |
-| `--tracing-service-name` | OpenTelemetry service name | crankfire |
-| `--tracing-sample-rate` | Trace sampling rate (0.0 to 1.0) | 1.0 |
-| `--tracing-insecure` | Skip TLS for OTLP exporter connection | false |
+| `--tracing-service-name` | Service name for the traces | crankfire |
+| `--tracing-sample-rate` | Share of requests to trace, from 0.0 to 1.0. **Set it yourself**, because the current default is 0 (no traces). | 0 |
+| `--tracing-insecure` | Connect to the collector without TLS | false |
 
-**Trace backends** — see [`docs/tracing-backends.md`](docs/tracing-backends.md) for copy-paste configs (Tempo, Jaeger, Honeycomb, OTLP collector, local Docker).
+> `--help` shows some defaults that only apply when you pass the flag. The table above shows the values that Crankfire really uses.
 
-For a complete CLI reference and configuration guide, see [Configuration & CLI Reference](https://torosent.github.io/crankfire/configuration.html).
+For every option and config key, see the [Configuration reference](https://torosent.github.io/crankfire/configuration.html).
 
-## Thresholds (CI/CD Integration)
+## Thresholds (pass/fail rules for CI)
 
-Define pass/fail criteria for your load tests. Perfect for catching performance regressions in CI pipelines.
+Thresholds let a test pass or fail automatically. This is useful in CI to catch slow or failing releases.
 
 ```bash
 crankfire --target https://api.example.com \
@@ -200,23 +199,25 @@ crankfire --target https://api.example.com \
   --threshold "http_requests:rate > 100"
 ```
 
-Or in a config file:
+You can also put them in a config file:
 
 ```yaml
 target: https://api.example.com
 concurrency: 50
 duration: 1m
 thresholds:
-  - "http_req_duration:p95 < 500"   # 95th percentile under 500ms
-  - "http_req_failed:rate < 0.01"   # Less than 1% failures
-  - "http_requests:rate > 100"      # At least 100 RPS
+  - "http_req_duration:p95 < 500"   # 95% of requests take less than 500 ms
+  - "http_req_failed:rate < 0.01"   # less than 1% of requests fail
+  - "http_requests:rate > 100"      # more than 100 requests per second
 ```
 
-The test exits with code 1 if any threshold fails, making it ideal for CI/CD gates. See [Thresholds Documentation](https://torosent.github.io/crankfire/thresholds.html) for details.
+**Exit code:** Crankfire exits with `0` only when all thresholds pass **and** no request failed. Otherwise it exits with `1`. See the [Thresholds guide](https://torosent.github.io/crankfire/thresholds.html) for all metrics and CI examples.
 
-## Configuration File
+## Config file
 
-Example JSON config:
+The same settings can be written as JSON or YAML.
+
+JSON:
 
 ```json
 {
@@ -236,7 +237,7 @@ Example JSON config:
 }
 ```
 
-Example YAML config:
+YAML:
 
 ```yaml
 target: https://api.example.com/users
@@ -253,11 +254,13 @@ graceful_shutdown: 5s
 retries: 3
 ```
 
-## Advanced Usage Scenarios
+Flags that you pass on the command line override the values in the file.
 
-### 1. Realistic Traffic Pattern (Ramp-up & Sustained Load)
+## Examples
 
-Simulate a realistic traffic curve with a warm-up phase followed by a sustained load period.
+### 1. Warm up, then hold the load
+
+Increase the load from 10 to 100 requests per second over 30 seconds, then keep it at 100 for 2 minutes.
 
 ```yaml
 target: https://api.example.com
@@ -275,9 +278,9 @@ load_patterns:
         duration: 2m
 ```
 
-### 2. Multi-Endpoint API Test (Weighted)
+### 2. Several endpoints with weights
 
-Distribute traffic across multiple endpoints to simulate real user behavior (e.g., 80% browsing, 20% purchasing).
+Send about 80% of requests to one endpoint and 20% to another, like real users who browse more than they buy.
 
 ```yaml
 target: https://api.example.com
@@ -294,11 +297,12 @@ endpoints:
     body: '{"product_id": "123", "quantity": 1}'
 ```
 
-### 3. Data-Driven Testing (CSV Feeder)
+### 3. Test data from a CSV file
 
-Inject dynamic data from a CSV file into request bodies or URLs.
+Each request takes the next row of the file. When the file ends, Crankfire starts again from the first row.
 
-**orders.csv**:
+**orders.csv**
+
 ```csv
 product_id,quantity
 101,2
@@ -306,19 +310,20 @@ product_id,quantity
 103,5
 ```
 
-**config.yaml**:
+**config.yaml**
+
 ```yaml
 target: https://api.example.com/orders
 method: POST
 feeder:
   type: csv
   path: ./orders.csv
-body: '{"product_id": "{{.product_id}}", "quantity": {{.quantity}}}'
+body: '{"product_id": "{{product_id}}", "quantity": {{quantity}}}'
 ```
 
-### 4. Request Chaining (Extract & Reuse)
+### 4. Request chaining
 
-Extract values from responses and use them in subsequent requests. Perfect for workflows like login → use token → access protected resources.
+Take values from one response and use them in later requests, for example log in and then use the token.
 
 ```yaml
 target: https://api.example.com
@@ -338,16 +343,16 @@ endpoints:
   - name: "get-profile"
     weight: 3
     method: GET
-    path: /users/{{user_id}}
+    path: /users/{{user_id|me}}
     headers:
       Authorization: "Bearer {{auth_token}}"
 ```
 
-See the [Request Chaining documentation](https://torosent.github.io/crankfire/request-chaining) for JSON path, regex extraction, defaults, and error handling.
+Each worker keeps its own variables. Crankfire picks endpoints at random by weight, so a worker may call `get-profile` before `login`. That is why the example uses a default value (`{{user_id|me}}`). The [Request Chaining guide](https://torosent.github.io/crankfire/request-chaining.html) explains this in detail.
 
-### 5. gRPC Load Test
+### 5. gRPC
 
-Load test a gRPC service using a Protocol Buffers definition.
+Load test a gRPC service using its `.proto` file. Use the full service name, including the package.
 
 ```yaml
 target: localhost:50051
@@ -360,16 +365,17 @@ grpc:
   timeout: 2s
 ```
 
-### 6. OpenTelemetry Tracing
+### 6. OpenTelemetry tracing
 
-Export spans and propagate W3C trace context to correlate load test traffic in your observability stack.
+Crankfire can create a trace span for each request and send the trace context to your service. You can then find the load-test requests in your tracing tool.
 
 ```bash
 crankfire --target https://api.example.com \
   --concurrency 20 \
   --duration 1m \
   --tracing-endpoint localhost:4317 \
-  --tracing-insecure
+  --tracing-insecure \
+  --tracing-sample-rate 1.0
 ```
 
 Or in a config file:
@@ -386,11 +392,11 @@ tracing:
   insecure: true
 ```
 
-Standard OpenTelemetry environment variables (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_SERVICE_NAME`) are also supported.
+Tracing starts only when you set an endpoint. Crankfire reads `OTEL_SERVICE_NAME`, and the exporter reads the standard `OTEL_EXPORTER_OTLP_*` variables (for example, headers). The [Tracing guide](https://torosent.github.io/crankfire/tracing.html) has setups for Jaeger, an OpenTelemetry Collector and Honeycomb.
 
-## Output Examples
+## Output
 
-### Human-Readable
+### Text report
 
 ```
 --- Load Test Results ---
@@ -406,6 +412,7 @@ Latency:
   Mean:            45ms
   P50:             42ms
   P90:             68ms
+  P95:             81ms
   P99:             112ms
 
 Status Buckets:
@@ -413,86 +420,78 @@ Status Buckets:
   HTTP 500: 1
 ```
 
-### JSON Output
+"Status Buckets" lists failed requests only, grouped by status code.
+
+### JSON report
 
 ```bash
-crankfire --target https://example.com --total 100 --json-output
+crankfire --config loadtest.yaml --json-output
 ```
 
 ```json
 {
-  "total": 100,
-  "successes": 100,
-  "failures": 0,
+  "total": 1000,
+  "successes": 992,
+  "failures": 8,
+  "requests_per_sec": 97.6,
   "min_latency_ms": 12.4,
   "max_latency_ms": 156.8,
   "mean_latency_ms": 45.2,
   "p50_latency_ms": 42.1,
   "p90_latency_ms": 68.3,
+  "p95_latency_ms": 81.0,
   "p99_latency_ms": 112.7,
-  "duration_ms": 10245.3,
-  "requests_per_sec": 9.76,
   "status_buckets": {
-    "http": {
-      "404": 2,
-      "500": 1
-    }
+    "http": { "503": 8 }
   },
+  "duration_ms": 10245.3,
   "endpoints": {
-    "list-users": {
-      "total": 600,
-      "successes": 600,
+    "list-products": {
+      "total": 800,
+      "successes": 800,
       "failures": 0,
-      "p99_latency_ms": 95.1,
-      "requests_per_sec": 58.6
+      "requests_per_sec": 78.1,
+      "p99_latency_ms": 95.1
     },
     "create-order": {
-      "total": 400,
-      "successes": 392,
+      "total": 200,
+      "successes": 192,
       "failures": 8,
+      "requests_per_sec": 19.5,
       "p99_latency_ms": 180.4,
-      "requests_per_sec": 39.1,
       "status_buckets": {
-        "http": {
-          "503": 8
-        }
+        "http": { "503": 8 }
       }
     }
   }
 }
 ```
 
-### HTML Report
+The endpoint entries are shortened here. In the real output, each endpoint has the same latency fields as the top level. The `endpoints` key appears only when you use `endpoints` or a HAR file.
 
-Generate a standalone HTML report with interactive charts and detailed statistics.
+### HTML report
 
 ```bash
 crankfire --target https://example.com --total 1000 --html-output report.html
 ```
 
-The report includes:
-- **Summary Cards**: Key metrics at a glance
-- **Interactive Charts**: RPS and latency percentiles over time
-- **Latency Statistics**: Detailed percentile breakdown
-- **Threshold Results**: Pass/fail status for configured thresholds
-- **Endpoint Breakdown**: Per-endpoint performance metrics
+The report is a single HTML file. It contains:
 
-<img width="1455" height="858" alt="Image1" src="https://github.com/user-attachments/assets/15837533-7e60-4553-9104-4bfdf16b9d79" />
+- Summary cards with the main numbers
+- Charts of requests per second and latency over time
+- A table of latency percentiles
+- Threshold results
+- Results for each endpoint
 
-<img width="1455" height="858" alt="Image2" src="https://github.com/user-attachments/assets/f8b81f9a-0b16-41b7-9654-49cc47ac9af4" />
+The charts load a JavaScript library from a CDN, so they need an internet connection.
 
-## Live Terminal Dashboard
+<img width="1455" height="858" alt="HTML report: summary and charts" src="https://github.com/user-attachments/assets/15837533-7e60-4553-9104-4bfdf16b9d79" />
 
-The dashboard provides a real-time, interactive view of your load test with the following features:
+<img width="1455" height="858" alt="HTML report: latency and endpoint tables" src="https://github.com/user-attachments/assets/f8b81f9a-0b16-41b7-9654-49cc47ac9af4" />
 
-- **Sparkline Latency Graph**: Visual representation of latency over time
-- **RPS Gauge**: Current requests per second with percentage indicator
-- **Metrics Table**: Real-time statistics including total requests, success/failure counts, and latency percentiles
-- **Status Buckets**: Protocol-specific failure codes with counts
-- **Endpoint Breakdown**: Weighted endpoint view with live share, RPS, and tail latency
-- **Test Summary**: Elapsed time, total requests, and success rate
+## Live dashboard
 
-### Usage
+Add `--dashboard` to watch the test while it runs:
 
 ```bash
 crankfire --target https://api.example.com \
@@ -502,59 +501,76 @@ crankfire --target https://api.example.com \
   --dashboard
 ```
 
-### Dashboard Layout
+The dashboard shows:
 
-<img width="1018" height="696" alt="Image" src="https://github.com/user-attachments/assets/4f2a30f1-aed7-4a38-b8bf-e37d37e43611" />
+- Elapsed time, total requests and success rate
+- Current requests per second, compared with your target rate
+- A latency chart and latency percentiles
+- Progress through your load patterns
+- Results for each endpoint
+- Failed requests grouped by status code
+
+Press `q`, `Esc` or `Ctrl+C` to stop the test early. Requests that are still running are cancelled and counted as failures, so a stopped test usually exits with code `1`. You cannot use `--dashboard` and `--json-output` together.
+
+<img width="1018" height="696" alt="Live terminal dashboard" src="https://github.com/user-attachments/assets/4f2a30f1-aed7-4a38-b8bf-e37d37e43611" />
 
 ## Terminal UI
 
-`crankfire tui` opens a terminal UI for managing saved load-test sessions and
-viewing past runs.
+`crankfire tui` opens a terminal app where you can save load tests ("sessions"), run them, and look at past results.
 
-```
+```bash
 crankfire tui [--data-dir <path>]
 ```
 
-Sessions and run results are stored in `~/.crankfire/` by default
-(or `$CRANKFIRE_DATA_DIR`). Each run writes `result.json` and `report.html`
-to a per-run directory under `runs/<session-id>/<timestamp>/`.
+Crankfire stores sessions and results in `~/.crankfire/`. To use another folder, set `$CRANKFIRE_DATA_DIR` or pass `--data-dir`. Each run creates a folder `runs/<session-id>/<timestamp>/` with `run.json`, `result.json` and `report.html`.
 
-Key bindings:
+Main keys:
 
-- Session list: `n` new, `e` edit, `d` delete, `i` import, `r` run, `h` history, `Enter` details, `q` quit
-- Edit screen: `Tab`/`Shift+Tab` move fields, `F2` toggle YAML, `Ctrl+S` save, `Esc` cancel
-- Run screen: `c` or `Esc` cancel, `p` pause snapshots
-- History: `o` open report, `Esc` back
+- **Session list:** `n` new, `e` edit, `i` import, `r` run, `h` history, `d` delete, `Enter` details, `s` sets, `/` filter by tag, `q` quit
+- **Edit screen:** `Tab`/`Shift+Tab` move between fields, `F2` switch to YAML, `Ctrl+S` save, `Esc` cancel
+- **Run screen:** `q`, `Esc` or `Ctrl+C` stop the run
+- **History:** `o` open the HTML report, `Esc` back
 
-See [TUI Guide](docs/tui.md) for a detailed walkthrough.
+The [TUI guide](https://torosent.github.io/crankfire/tui.html) explains every screen.
 
-## Sets of Load Tests
+## Sets (test suites)
 
-Group multiple sessions into stages with thresholds and run them as a suite. See [docs/sets.md](docs/sets.md).
+A set groups saved sessions into stages. Stages run one after another, and the tests inside a stage run at the same time. You can add thresholds, compare two runs, and run sets on a schedule with `crankfire daemon`.
 
-## Responsible Use and Legal Notice
+```bash
+crankfire set run <set-id> --html set-report.html
+crankfire set diff <run-a> <run-b>
+crankfire daemon
+```
 
-⚠️ **IMPORTANT**: Crankfire is a powerful load testing tool that can generate significant traffic against target systems.
+See the [Sets guide](https://torosent.github.io/crankfire/sets.html).
 
-**You MUST:**
-- Only use Crankfire against systems you own or have explicit written permission to test
-- Verify you have authorization before running any load tests
-- Be aware that unauthorized load testing may violate terms of service, acceptable use policies, or laws
-- Consider the impact on production systems and third-party services
+## Responsible use
 
-**Security Best Practices:**
-- Never commit authentication credentials to version control
-- Use environment variables for secrets: `CRANKFIRE_AUTH_CLIENT_SECRET`, `CRANKFIRE_AUTH_PASSWORD`, `CRANKFIRE_AUTH_STATIC_TOKEN`
-- Avoid passing secrets via CLI flags (they appear in shell history and process lists)
-- Use short-lived tokens with minimal scopes
-- Prefer `oauth2_client_credentials` over legacy `oauth2_resource_owner` password flow
-- For gRPC, always enable TLS verification in production (`insecure: false`)
+⚠️ **Important:** Crankfire can send a lot of traffic. Use it with care.
 
-**Rate Limiting:**
-- Start with conservative rate and concurrency settings
-- Gradually increase load while monitoring target system health
+**You must:**
 
-Misuse of this tool may result in service disruptions, account termination, legal action, or criminal charges. The authors and contributors are not responsible for misuse of this software.
+- Only test systems that you own, or that you have written permission to test.
+- Check that you have permission before every test.
+- Know that load testing without permission can break terms of service, usage policies or laws.
+- Think about the effect on production systems and on third-party services.
+
+**Keep secrets safe:**
+
+- Never commit passwords, tokens or keys to version control.
+- Put secrets in environment variables: `CRANKFIRE_AUTH_CLIENT_SECRET`, `CRANKFIRE_AUTH_PASSWORD`, `CRANKFIRE_AUTH_STATIC_TOKEN`. Crankfire uses them when the matching field in the `auth` block of the config file is empty.
+- Do not put secrets in command-line flags. Other users can see them in the shell history and the process list.
+- Use short-lived tokens with as few permissions as possible.
+- Use `oauth2_client_credentials` instead of the older `oauth2_resource_owner` (password) flow.
+- For gRPC in production, keep certificate checks on (`insecure: false`).
+
+**Increase the load slowly:**
+
+- Start with a low rate and few workers.
+- Increase the load step by step and watch the health of the system you test.
+
+Misuse can cause outages, closed accounts, legal action or criminal charges. The authors and contributors are not responsible for misuse of this software.
 
 ## License
 

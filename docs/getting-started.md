@@ -2,27 +2,38 @@
 layout: default
 title: Getting Started
 ---
+{% raw %}
 
 # Getting Started
 
-This guide walks you from installation to your first meaningful load test.
+This guide covers installing Crankfire and running your first tests.
 
-## Install Crankfire
+> Only load-test systems you own or have explicit permission to test.
 
-### Homebrew (macOS & Linux)
+## Install
+
+**Homebrew** (macOS and Linux):
 
 ```bash
 brew tap torosent/crankfire
 brew install crankfire
 ```
 
-### Go Install
+**Docker**:
+
+```bash
+docker run --rm ghcr.io/torosent/crankfire --target https://example.com --total 100
+```
+
+**Go**:
 
 ```bash
 go install github.com/torosent/crankfire/cmd/crankfire@latest
 ```
 
-### Build From Source
+**Prebuilt binaries**: download `crankfire_<os>_<arch>.tar.gz` (Linux, macOS) or the `.zip` (Windows) from the [releases page](https://github.com/torosent/crankfire/releases).
+
+**From source**:
 
 ```bash
 git clone https://github.com/torosent/crankfire.git
@@ -30,125 +41,134 @@ cd crankfire
 go build -o build/crankfire ./cmd/crankfire
 ```
 
-### Docker
-
-You can run Crankfire directly from the GitHub Container Registry without installing anything:
-
-```bash
-docker run ghcr.io/torosent/crankfire --target https://example.com --total 100
-```
-
-## Verify the Installation
+Check that it works:
 
 ```bash
 crankfire --help
 ```
 
-You should see the list of supported flags and a short description.
+## Your first test
 
-## Your First Load Test
-
-### Minimal Example
-
-Hit a public echo service with 100 requests:
+Send 100 requests using 10 workers:
 
 ```bash
-crankfire --target https://httpbin.org/get --total 100
+crankfire --target https://httpbin.org/get --concurrency 10 --total 100
 ```
 
-Key points:
+While the test runs, a progress line updates in place on stdout. When it finishes, Crankfire prints a report:
 
-- `--target` is required unless using `--har` or endpoints with full URLs.
-- `--total` controls the total number of requests (instead of duration).
+```
+--- Load Test Results ---
+Total Requests:    100
+Successful:        98
+Failed:            2
+Duration:          2.41s
+Requests/sec:      41.49
 
-### Concurrency and Duration
+Latency:
+  Min:             38.2ms
+  Max:             412.7ms
+  Mean:            92.5ms
+  P50:             71.3ms
+  P90:             160.1ms
+  P95:             221.8ms
+  P99:             398.0ms
 
-Run a 30‑second test with 20 workers:
+Status Buckets:
+  HTTP 503: 2
+```
+
+Reading the report:
+
+- **Latency** covers the whole request, from building it until the full response body has been read. Percentiles come from an HDR histogram.
+- **Status Buckets** list only **failures**, grouped by protocol and code. For HTTP, a failure is a status of `400` or higher, or a transport error. See [Protocols](protocols.md#status-buckets).
+- The report can also include sections for thresholds, per-endpoint results and protocol metrics. Each one appears only when it applies.
+
+## Controlling load
 
 ```bash
-crankfire \
-  --target https://httpbin.org/get \
-  --concurrency 20 \
-  --duration 30s
+# 20 workers, at most 100 req/s, for 30 seconds
+crankfire --target https://httpbin.org/get -c 20 -r 100 -d 30s
 ```
 
-### Add the Dashboard
+- `--concurrency` / `-c`: the maximum number of requests in flight.
+- `--rate` / `-r`: requests per second. `0` means unlimited.
+- `--duration` / `-d` or `--total` / `-t`: when to stop. The test ends at whichever limit comes first. With neither set, it runs until you press Ctrl+C.
 
-For a richer view, enable the terminal dashboard:
+For ramps, steps, spikes and Poisson arrivals, see [Modeling the workload](configuration.md#modeling-the-workload).
+
+## POST with headers
 
 ```bash
-crankfire \
-  --target https://httpbin.org/get \
-  --concurrency 20 \
-  --rate 100 \
-  --duration 30s \
-  --dashboard
+crankfire --target https://httpbin.org/post \
+  --method POST \
+  --header "Content-Type=application/json" \
+  --body '{"name":"crankfire"}' \
+  --total 50
 ```
 
-Use `q` or `Ctrl+C` to exit the dashboard.
+Headers are written as `Key=Value`, and `--header` can be repeated.
 
-## Using a Config File
-
-Instead of long command lines, define a test in JSON or YAML.
+## Using a config file
 
 `loadtest.yaml`:
 
 ```yaml
 target: https://api.example.com/users
-method: GET
 concurrency: 25
 rate: 50
 duration: 2m
 timeout: 10s
 retries: 2
 headers:
-  Authorization: Bearer your-token
   Accept: application/json
+thresholds:
+  - "http_req_duration:p95 < 500"
+  - "http_req_failed:rate < 0.01"
 ```
-
-Run it with:
 
 ```bash
 crankfire --config loadtest.yaml
+crankfire --config loadtest.yaml --concurrency 50   # flags you pass override the file
 ```
 
-You can still override values with flags:
+The [Configuration reference](configuration.md) lists every key.
+
+## Live dashboard
 
 ```bash
-crankfire --config loadtest.yaml --concurrency 50 --duration 5m
+crankfire --target https://httpbin.org/get -c 20 -r 100 -d 1m --dashboard
 ```
 
-## Generating Reports
+The dashboard is a full-screen terminal view. It shows throughput, latency trends, percentiles, endpoints, status buckets and load-pattern progress. Press `q`, `Esc` or `Ctrl+C` to **stop the test**; the final report then prints. `--dashboard` can't be combined with `--json-output`. See [Dashboard & Reporting](dashboard-reporting.md).
 
-Crankfire can generate standalone HTML reports with interactive charts.
+## JSON and HTML reports
 
 ```bash
-crankfire --target https://httpbin.org/get \
-  --concurrency 10 \
-  --total 1000 \
-  --html-output report.html
+crankfire --target https://httpbin.org/get --total 500 --json-output > results.json
+crankfire --target https://httpbin.org/get --total 500 --html-output report.html
 ```
 
-Open `report.html` in your browser to view the results.
+`report.html` is a single file with charts of throughput and latency over time. The charts load from a CDN, so viewing it needs a network connection.
 
-## Import from HAR File
+## Replaying a browser session
 
-You can record a browser session and replay it as a load test:
-
-1. Open browser DevTools (F12) → Network tab
-2. Perform the actions you want to test
-3. Right-click → "Save all as HAR"
-4. Run the load test:
+Save a HAR from your browser's DevTools Network tab, then run:
 
 ```bash
 crankfire --har recording.har --har-filter "host:api.example.com" --total 100
 ```
 
-See [HAR Import](har-import.md) for filtering options and best practices.
+See [HAR Import](har-import.md).
 
-## Next Steps
+## Exit codes
 
-- Learn how to describe realistic workloads: [Configuration & CLI Reference](configuration.md).
-- Explore authentication helpers: [Authentication](authentication.md).
-- Introduce dynamic test data: [Data Feeders](feeders.md).
-- Try out WebSocket, SSE, and gRPC: [Protocols](protocols.md).
+The command exits with `0` only if **every threshold passed and no request failed**. Anything else exits with `1`, including a single failed request when no thresholds are set. Stopping a test early with Ctrl+C or `q` cancels in-flight requests, which count as failures, so an interrupted run usually exits with `1`. This makes it usable as a CI gate without extra scripting. See [Exit codes](configuration.md#exit-codes) and [Thresholds](thresholds.md).
+
+## Next steps
+
+- [Configuration & CLI Reference](configuration.md): every flag and key, plus workload modeling
+- [Protocols](protocols.md): WebSocket, SSE and gRPC
+- [Authentication](authentication.md), [Data Feeders](feeders.md), [Request Chaining](request-chaining.md)
+- [Terminal UI](tui.md) and [Sets, Scheduling & Session CLI](sets.md): saved tests, suites, and runs on a schedule
+{% endraw %}

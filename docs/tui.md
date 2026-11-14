@@ -1,291 +1,172 @@
-# Terminal UI Guide
+---
+layout: default
+title: Terminal UI
+---
+{% raw %}
 
-The Crankfire Terminal UI (`crankfire tui`) provides an interactive dashboard for managing load-test sessions, editing configurations, running tests, and viewing historical results.
+# Terminal UI
 
-## Overview
-
-The TUI is organized into five main screens:
-
-1. **Session List** — Browse, create, edit, delete, and run saved sessions
-2. **Edit Screen** — Create or modify a session configuration (form or YAML mode)
-3. **Run Screen** — Real-time view of an active load test
-4. **History Screen** — View past runs for a session and open reports
-5. **Details Screen** — View session or run details
-
-## Data Directory
-
-Sessions and results are stored in `~/.crankfire/` by default. You can override this with:
+`crankfire tui` is a full-screen terminal app for keeping a library of load tests ("sessions"), running them, and browsing their history. It also manages [sets](sets.md): suites of sessions organized into stages and evaluated with thresholds.
 
 ```bash
-crankfire tui --data-dir /custom/path
+crankfire tui                      # uses $CRANKFIRE_DATA_DIR or ~/.crankfire
+crankfire tui --data-dir ./perf    # use a project-local library
 ```
 
-Or by setting the `$CRANKFIRE_DATA_DIR` environment variable:
+Everything the TUI creates is plain YAML/JSON on disk (see [Data directory](#data-directory)), so you can version it, edit it by hand, or script it.
 
-```bash
-export CRANKFIRE_DATA_DIR=/data/crankfire
-crankfire tui
+## Concepts
+
+| Term | What it is |
+|---|---|
+| **Session** | A saved load-test configuration (the same settings as a [config file](configuration.md)) with a name, description and tags |
+| **Run** | One execution of a session. Its summary is stored, plus `result.json` and `report.html` |
+| **Set** | Stages of session items with overrides and thresholds. See [Sets](sets.md) |
+
+## Sessions list (home screen)
+
+| Key | Action |
+|---|---|
+| `↑`/`k`, `↓`/`j` | Move the cursor |
+| `Enter` | Open session details |
+| `n` | New session |
+| `e` | Edit the selected session |
+| `i` | Import a session from an existing config file |
+| `r` | Run the selected session |
+| `h` | Show run history |
+| `d` | Delete (asks to confirm with `y`/`n`) |
+| `s` | Switch to the sets list |
+| `/` | Filter by tag. `Enter` applies, `Esc` cancels |
+| `x` | Clear the active filter |
+| `q`, `Ctrl+C` | Quit |
+
+**Tag filter syntax:** spaces mean AND, commas mean OR. `prod smoke,regression` matches sessions tagged `prod` **and** either `smoke` or `regression`. Tags may contain letters, digits, `.`, `_` and `-`, up to 64 characters.
+
+> **Note:** On the home screen `q` quits immediately, even while you are typing in the filter prompt.
+
+Deleting a session removes only its YAML file. Its run history stays under `runs/<session-id>/`, and sets that reference it will fail that item until you update them.
+
+## Creating and editing a session
+
+The editor has two modes.
+
+**Form mode** covers the common fields: Name, Target, Protocol (`http`, `websocket`, `sse`, `grpc`), Total, Rate, Duration, Concurrency and Timeout.
+
+| Key | Action |
+|---|---|
+| `Tab`/`↓` | Next field (Tab on the last field switches to YAML mode) |
+| `Shift+Tab`/`↑` | Previous field |
+| `F2` | Toggle YAML mode |
+| `Ctrl+S` | Save |
+| `Esc` | Cancel |
+
+The form requires a name and a URL with scheme and host, such as `https://...` or `ws://...`. For targets without a scheme, like a gRPC `host:port`, use YAML mode or import a config file.
+
+**YAML mode** edits the whole session, including everything the form cannot express: headers, body, endpoints, load patterns, auth, feeders, protocol blocks, thresholds and tracing. `F2` returns to the form; invalid YAML keeps you in YAML mode with a warning. Saving from YAML mode keeps the session ID. Do not edit `id:` and then switch back to the form with `F2`: saving from the form would then create a new session file and leave the old one.
+
+> **Important:** Inside a session file, the `config:` block uses lowercased Go field names, **not** the config-file keys. For example `targeturl` instead of `target`, and `loadpatterns`, `bodyfile`, `fromrps`, `clientsecret`, `protofile`, `samplerate`. Durations are strings such as `30s`. Extractors are the exception: they keep their normal keys (`jsonpath`, `regex`, `var`, `on_error`).
+
+```yaml
+schema_version: 1
+id: 01JC9V6M3T6Q3WJ8T6K6Y6R0ZB
+name: checkout-api
+description: Baseline for the checkout service
+tags: [prod, smoke]
+config:
+  targeturl: https://api.example.com/checkout
+  method: POST
+  headers:
+    Content-Type: application/json
+  body: '{"sku":"123"}'
+  concurrency: 20
+  rate: 100
+  duration: 1m
+  timeout: 5s
+  protocol: http
+  loadpatterns:
+    - name: warmup
+      type: ramp
+      fromrps: 10
+      torps: 100
+      duration: 30s
+  thresholds:
+    - "http_req_duration:p95 < 500"
 ```
 
-Directory structure:
+The easiest way to get a correct session is to **import** a normal config file (`i`), then fine-tune it in YAML mode.
+
+## Importing a config file
+
+Press `i`, enter the path to a JSON/YAML [config file](configuration.md) and a session name, then press `Enter`. The file is parsed with the same loader as `crankfire --config`.
+
+> **Security:** Importing copies every value into the session file, including secrets that were resolved from `CRANKFIRE_AUTH_*` environment variables. Session files are written with `0600` permissions inside a `0700` directory, but they are plaintext.
+
+## Session details
+
+Shows the session's name, ID, description, target, protocol and total. `r` runs it, `h` opens its history, `Esc` goes back. The footer also shows `[e] edit`, but that key does nothing here; edit from the sessions list.
+
+## Running a session
+
+Press `r` on the list or the details screen. The test runs inside the TUI process and shows a reduced version of the [`--dashboard`](dashboard-reporting.md#live-dashboard) view: run summary, RPS, request context and the latency trend with P50/P95/P99. The endpoint, status-bucket, protocol-metric and load-pattern panels stay empty. Use `report.html` or `result.json` for those details after the run.
+
+| Key | Action |
+|---|---|
+| `q`, `Esc`, `Ctrl+C` | Cancel the run |
+
+When the run finishes or is cancelled, Crankfire writes `result.json` and `report.html` into the run directory, records the run summary, and returns to the previous screen. A run with any failed requests is recorded with status `failed`.
+
+> **Note:** Thresholds in a session are not evaluated for TUI single runs. Use `crankfire --config` or a [set](sets.md) when you need a pass/fail verdict.
+
+## Run history
+
+A table of past runs with Started, Status, Total, P95 (ms) and Errors.
+
+| Key | Action |
+|---|---|
+| `↑`/`k`, `↓`/`j` | Move |
+| `o` | Open the run's `report.html` in your browser (`open`, or `xdg-open` on Linux) |
+| `Esc` | Back |
+
+## Sets screens
+
+Press `s` on the home screen to open the sets list. The full set workflow, including the YAML format, overrides, thresholds, compare and diff, is described in [Sets](sets.md). The keys are:
+
+| Screen | Keys |
+|---|---|
+| Sets list | `j`/`k` move · `Enter` details · `n` new · `t` new from template · `d` delete (**no confirmation**) · `r` refresh · `/` filter · `q`/`Esc` quit the **whole TUI** (there is no way back to the sessions list) |
+| Set details | `e` edit · `R` run · `h` history · `Esc` back |
+| Set editor | `Tab` switch Name/Description · `y` YAML mode (stages and items) · `f` back to form · `Ctrl+S` save · `Esc` cancel. `y` and `f` work everywhere on this screen, so you cannot type a `y` in the form or an `f` in the YAML. Edit `sets/<id>.yaml` in a text editor instead when you need to |
+| Template picker | `j`/`k` + `Enter` choose · then edit `key=value` params: `Tab`/`Shift+Tab` move, `Ctrl+N` add row, `Ctrl+S` create · `Esc` back |
+| Set run | Live per-stage, per-item status · `q`/`Esc` cancel, or open the compare view when finished |
+| Set history | `space` mark a run · `Enter` compare items in a run · `d` diff the two marked runs · `Esc` back |
+| Compare | Metric × item table; `★` marks the best item per metric |
+| Diff | Verdict (`improved`, `regressed`, `mixed`, `unchanged`) and per-item deltas |
+
+The tag filter on the sets list matches a set when any session it references matches the filter.
+
+> **Known issue:** Screens reached with `R`, `h` (from set details) and `t` (from the sets list) currently open without loading. The set run does not start, history is empty, and no templates are listed. Coming back to the sets list also shows it empty until you press `r`. Until this is fixed, use `crankfire set run`, `crankfire set diff` and `crankfire set new --from-template` from the [CLI](sets.md#cli).
+
+## Data directory
+
+The data directory is resolved in this order: `--data-dir`, then `$CRANKFIRE_DATA_DIR`, then `~/.crankfire`.
 
 ```
 ~/.crankfire/
-├── sessions/
-│   ├── my-api-test.json
-│   ├── websocket-load.json
-│   └── grpc-benchmark.json
-└── runs/
-    ├── my-api-test/
-    │   ├── 2025-04-19T14:30:00Z/
-    │   │   ├── result.json
-    │   │   └── report.html
-    │   └── 2025-04-19T14:35:00Z/
-    │       ├── result.json
-    │       └── report.html
-    └── websocket-load/
-        └── 2025-04-19T15:00:00Z/
-            ├── result.json
-            └── report.html
+├── sessions/<id>.yaml                 # one file per session (IDs are ULIDs)
+├── runs/<session-id>/<timestamp>/     # one directory per TUI run
+│   ├── run.json                       # status + summary (requests, errors, p50/p95/p99)
+│   ├── result.json                    # full JSON report
+│   └── report.html                    # HTML report
+├── sets/<id>.yaml                     # set definitions
+├── runs/sets/<set-id>/<timestamp>/set-run.json
+├── templates/<id>.yaml                # set templates (written by hand)
+└── daemon.lock                        # held while `crankfire daemon` runs
 ```
 
-## Session List Screen
+Writes are atomic (write to a temp file, then rename) and serialized with lock files, so the TUI, `crankfire session`/`set` and the daemon can share one directory.
 
-This is the main screen when you launch `crankfire tui`. It shows a list of all saved sessions.
+## Related commands
 
-### Key Bindings
-
-| Key | Action |
-|-----|--------|
-| `n` | Create a new session |
-| `e` | Edit the selected session |
-| `d` | Delete the selected session |
-| `i` | Import a session from a YAML/JSON file |
-| `r` | Run the selected session immediately |
-| `h` | View run history for the selected session |
-| `Enter` | View full details of the selected session |
-| `q` or `Esc` | Quit the TUI |
-
-### Workflow Example
-
-1. Press `n` to create a new session
-2. Enter a session name (e.g., `api-baseline`)
-3. You'll be taken to the **Edit Screen**
-
-## Edit Screen
-
-Use this screen to create or modify a session configuration. The configuration is the same YAML/JSON format as a Crankfire config file.
-
-### Modes
-
-- **Form Mode** (default): Interactive form with labeled fields (target, method, concurrency, etc.)
-- **YAML Mode**: Edit raw YAML configuration
-
-### Key Bindings
-
-| Key | Action |
-|-----|--------|
-| `Tab` | Move to next field |
-| `Shift+Tab` | Move to previous field |
-| `F2` | Toggle between Form and YAML mode |
-| `Ctrl+S` | Save the session |
-| `Esc` | Cancel and return to Session List |
-
-### Form Mode Fields
-
-- **Target**: The endpoint URL (required)
-- **Method**: HTTP method (GET, POST, PUT, DELETE, etc.; default: GET)
-- **Protocol**: Protocol mode (http, websocket, sse, grpc; default: http)
-- **Concurrency**: Number of parallel workers
-- **Rate**: Requests per second (0 = unlimited)
-- **Duration**: Test duration (e.g., 30s, 1m)
-- **Total**: Total number of requests
-- **Timeout**: Per-request timeout (default: 30s)
-- **Body**: Request body (for POST/PUT/PATCH)
-- **Headers**: Add custom headers
-- **Load Patterns**: Configure ramp/step/spike patterns
-- **Thresholds**: Set performance pass/fail criteria
-
-### YAML Mode
-
-Press `F2` to switch to YAML mode and edit the raw configuration. This is useful for:
-
-- Copying and pasting complex configurations
-- Setting advanced options not exposed in Form mode
-- Editing multi-endpoint setups with weighted distributions
-- Configuring data feeders and request chaining
-
-Example YAML configuration:
-
-```yaml
-target: https://api.example.com
-method: GET
-concurrency: 20
-rate: 100
-duration: 1m
-headers:
-  Authorization: Bearer token123
-  Content-Type: application/json
-load_patterns:
-  - name: ramp
-    type: ramp
-    from_rps: 10
-    to_rps: 100
-    duration: 30s
-thresholds:
-  - http_req_duration:p95 < 500
-  - http_req_failed:rate < 0.01
-```
-
-Press `Ctrl+S` to save.
-
-## Run Screen
-
-When you press `r` to run a session, the TUI switches to the **Run Screen**, showing real-time progress and metrics.
-
-### Display Elements
-
-- **Test Header**: Session name, target URL, and elapsed time
-- **Real-time Metrics Table**:
-  - Total requests sent
-  - Successful / failed request counts
-  - Request rate (RPS)
-  - Latency percentiles (min, p50, p90, p95, p99, max)
-  - Status code buckets
-- **Sparkline Graph** (optional): Visual latency trend over time
-- **Status Messages**: Errors, warnings, and progress updates
-
-### Key Bindings
-
-| Key | Action |
-|-----|--------|
-| `c` or `Esc` | Cancel the running test |
-| `p` | Pause snapshots (stop updating the display, but test continues) |
-| `q` | Return to Session List after test completes |
-
-### Example Run Output
-
-```
-─── Load Test: api-baseline ───────────────────────────────────
-Target: https://api.example.com
-Status: Running (25s elapsed)
-
-Requests:     2,500 total | 2,487 success | 13 failed
-Request Rate: 100.0 RPS
-Latency:      12ms min | 45ms p50 | 68ms p95 | 112ms p99 | 156ms max
-
-Status Buckets:
-  HTTP 200: 2,487
-  HTTP 503: 13
-
-───────────────────────────────────────────────────────────────
-p: pause | c: cancel | q: back
-```
-
-## History Screen
-
-View all past runs for a selected session and open their HTML reports.
-
-### Key Bindings
-
-| Key | Action |
-|-----|--------|
-| `o` | Open the selected run's HTML report in your default browser |
-| `Enter` | View run details |
-| `Esc` or `q` | Back to Session List |
-
-Each run shows:
-
-- **Timestamp**: When the test was executed
-- **Duration**: How long the test took
-- **Total Requests**: Requests sent in this run
-- **Status**: Success count and failure count
-
-Runs are stored in `~/.crankfire/runs/<session-id>/<timestamp>/`, and each includes:
-
-- `result.json` — Structured metrics (used for CI/CD integration)
-- `report.html` — Interactive HTML report with charts
-
-## Details Screen
-
-View full details of a session or run. Press `Enter` on any session or run to view its complete configuration and results.
-
-## Example Workflows
-
-### Workflow 1: Create and Run a Quick HTTP Load Test
-
-1. Launch `crankfire tui`
-2. Press `n` to create a new session; name it `quick-test`
-3. In Edit screen:
-   - Set Target: `https://api.example.com`
-   - Set Concurrency: `10`
-   - Set Total: `100`
-   - Press `Ctrl+S` to save
-4. Press `r` to run
-5. Watch the real-time metrics on the Run screen
-6. After the test completes, press `q` to return to the session list
-
-### Workflow 2: Edit an Existing Session
-
-1. From the Session List, select a session and press `e`
-2. In Edit screen, modify the configuration (e.g., increase concurrency or add headers)
-3. Press `Ctrl+S` to save
-4. Press `Esc` to return to the Session List
-
-### Workflow 3: Switch to YAML Mode for Advanced Config
-
-1. From the Session List, select a session and press `e`
-2. Press `F2` to toggle to YAML mode
-3. Edit the raw configuration, e.g., add multi-endpoint setups:
-
-```yaml
-endpoints:
-  - name: list-users
-    weight: 8
-    method: GET
-    path: /users
-  - name: create-order
-    weight: 2
-    method: POST
-    path: /orders
-    body: '{"product_id": "123", "quantity": 1}'
-```
-
-4. Press `Ctrl+S` to save and return to Session List
-
-### Workflow 4: View and Compare Historical Runs
-
-1. From the Session List, select a session
-2. Press `h` to view run history
-3. Browse the list of past runs (sorted by timestamp, most recent first)
-4. Press `o` to open the HTML report of a run in your browser for detailed analysis
-5. Press `Esc` to return to the Session List
-
-## Tips and Tricks
-
-- **Keyboard Navigation**: Use `Tab` and `Shift+Tab` to move between fields in Form mode
-- **Copy Configuration**: Export a session as YAML, then paste it into another tool or version control
-- **Reuse Sessions**: Once you've configured a session, you can run it multiple times without reconfiguring
-- **Archive Results**: All run results (JSON and HTML reports) are automatically saved to `~/.crankfire/runs/`
-- **Compare Baselines**: Use the History screen to compare metrics across multiple runs of the same session
-
-## Troubleshooting
-
-### Session not saving
-- Ensure the `~/.crankfire/` directory exists and is writable
-- Check the `$CRANKFIRE_DATA_DIR` environment variable if you've set a custom path
-
-### Cannot open HTML report
-- Verify that the report file exists: `~/.crankfire/runs/<session-id>/<timestamp>/report.html`
-- Ensure your default browser is configured correctly
-
-### Run screen shows errors
-- Check the target URL and ensure it's reachable
-- Verify authentication credentials if the endpoint requires them
-- Review thresholds for false negatives
-
-## See Also
-
-- [Crankfire README](../README.md)
-- [Configuration & CLI Reference](https://torosent.github.io/crankfire/configuration.html)
-- [Getting Started Guide](https://torosent.github.io/crankfire/getting-started.html)
+- `crankfire session list|edit` manages session metadata and tags from scripts. See [Sets → Session CLI](sets.md#session-cli).
+- `crankfire set ...` and `crankfire daemon` run and schedule sets. See [Sets](sets.md).
+{% endraw %}

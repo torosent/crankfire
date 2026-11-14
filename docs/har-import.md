@@ -2,232 +2,92 @@
 layout: default
 title: HAR Import
 ---
+{% raw %}
 
 # HAR Import
 
-Crankfire can import HTTP Archive (HAR) files and convert them to load test endpoints. This allows you to record browser sessions and replay them as load tests.
+Record a browser session, save it as an HTTP Archive (HAR), and replay the captured requests as a weighted HTTP load test.
 
-## What is HAR?
+## Recording a HAR
 
-HAR (HTTP Archive) is a JSON-based format for recording HTTP transactions. Most browsers and developer tools can export HAR files:
+- **Chrome / Edge**: DevTools, then the Network tab. Right-click a request and choose **Save all as HAR with content**.
+- **Firefox**: DevTools, then the Network tab. Click the gear icon and choose **Save All As HAR**.
+- **Safari**: Web Inspector, then the Network tab, then **Export**.
+- Proxies such as Charles or Fiddler can also export HAR files.
 
-- **Chrome**: Network tab → Right-click → "Save all as HAR with content"
-- **Firefox**: Network tab → Gear icon → "Save All As HAR"
-- **Safari**: Network tab → Export
-- **Charles/Fiddler**: Export as HAR
-
-## Quick Start
-
-### Basic Usage
+## Usage
 
 ```bash
 crankfire --har recording.har --total 100
+crankfire --har recording.har --har-filter "host:api.example.com" --concurrency 10 --duration 1m
+crankfire --har recording.har --har-filter "host:api.example.com;method:GET,POST" --rate 50 --duration 2m
 ```
 
-This loads all HTTP requests from the HAR file and executes them as a load test.
-
-### With Filtering
-
-Filter by host to include only specific domains:
-
-```bash
-crankfire --har recording.har --har-filter "host:api.example.com" --total 100
-```
-
-Filter by HTTP method:
-
-```bash
-crankfire --har recording.har --har-filter "method:GET,POST" --total 100
-```
-
-Combine filters with semicolons:
-
-```bash
-crankfire --har recording.har --har-filter "host:api.example.com;method:POST" --total 100
-```
-
-## CLI Flags
-
-| Flag | Description | Example |
-|------|-------------|---------|
-| `--har` | Path to HAR file | `--har recording.har` |
-| `--har-filter` | Filter HAR entries | `--har-filter "host:api.example.com"` |
-
-## Config File Usage
-
-You can also specify HAR import in a config file:
+You can also set it in a config file:
 
 ```yaml
-har_file: ./recording.har
+har_file: ./recording.har            # relative to the working directory
 har_filter: "host:api.example.com;method:GET,POST"
 concurrency: 10
 duration: 1m
+thresholds:
+  - "http_req_duration:p95 < 800"
 ```
 
-Then run:
+You don't need a `target`, because every imported endpoint carries its full URL. Before the run starts, Crankfire prints a summary to stderr, for example `HAR: replaying 12 endpoints to 2 host(s): …`, along with a warning that HAR files may contain sensitive data.
 
-```bash
-crankfire --config loadtest.yaml
-```
+## Filter syntax
 
-## Filter Format
+A filter is made of clauses separated by `;`. Each clause is `key:value1,value2`. Within a clause, any value can match (OR). For an entry to be kept, it must pass every clause (AND).
 
-The `--har-filter` flag accepts a semicolon-separated list of filters:
+| Key | Matches | Example |
+|-----|---------|---------|
+| `host` | Exact `host[:port]` from the URL. No wildcards, and the port must match if one is recorded. | `host:api.example.com,auth.example.com` |
+| `method` | HTTP method, case-insensitive | `method:GET,POST` |
 
-### Host Filter
+Any other key fails with an error: `unknown HAR filter key "x" (supported: host, method)`.
 
-Include only requests to specific hosts:
+## What gets imported
 
-```
-host:api.example.com
-host:api.example.com,cdn.example.com
-```
+Each remaining HAR entry becomes one endpoint:
 
-### Method Filter
+| HAR field | Endpoint | Notes |
+|-----------|----------|-------|
+| `request.url` | `url` | Full URL, including the query string |
+| URL path | `name` (and `path`) | Several entries with the same path share one metrics row |
+| `request.method` | `method` | |
+| `request.headers` | `headers` | After the header filtering described below |
+| `request.postData.text` | `body` | For any method that has post data. `params` are ignored. |
+| — | `weight: 1` | Every entry is equally likely |
 
-Include only specific HTTP methods:
+Responses are ignored. Entries are replayed by random weighted selection, not in the recorded order. To control the mix, write the requests out by hand as a regular `endpoints:` list with weights. Crankfire has no command that exports a HAR as YAML.
 
-```
-method:GET
-method:GET,POST,PUT
-```
+Global `headers`, `auth` and feeders still apply. Endpoint headers from the HAR override global headers that have the same name.
 
-### Combined Filters
+## What gets dropped
 
-Combine multiple filters with semicolons:
+**Static assets.** Entries whose URL path ends in any of these extensions are dropped (case-insensitive):
+`.js .css .png .jpg .jpeg .gif .svg .woff .woff2 .ttf .eot .ico .map`
 
-```
-host:api.example.com;method:POST
-```
+**Headers.** These headers are removed:
+- hop-by-hop headers: `Connection`, `Keep-Alive`, `Proxy-Authenticate`, `Proxy-Authorization`, `TE`, `Trailers`, `Transfer-Encoding`, `Upgrade`
+- `Host` and `Content-Length`, which Go sets itself
+- HTTP/2 pseudo-headers such as `:authority` and `:path`
 
-## Automatic Filtering
+Static-asset filtering is always on. It can't be turned off, and hosts can't be excluded from the CLI. To include or exclude more, edit the HAR or filter with `host:`.
 
-Crankfire automatically excludes static assets by default:
+## Security
 
-- JavaScript files (`.js`, `.map`)
-- CSS files (`.css`)
-- Images (`.png`, `.jpg`, `.jpeg`, `.gif`, `.svg`, `.ico`)
-- Fonts (`.woff`, `.woff2`, `.ttf`, `.eot`)
+> **Note:** A HAR records exactly what your browser sent. That includes `Cookie` and `Authorization` headers, session tokens in URLs, and form bodies. Crankfire **keeps** all of them.
 
-This keeps your load test focused on API endpoints rather than static content.
+- Before replaying a HAR, scrub it or record it with a throwaway test account.
+- Never commit HAR files that contain real credentials.
+- Use `--har-filter host:…` so your test doesn't hit third-party analytics, CDNs or identity providers you don't own.
+- Only replay traffic against systems you're authorised to test.
 
-## What Gets Imported
+## Tips
 
-From each HAR entry, Crankfire extracts:
-
-| HAR Field | Endpoint Field | Notes |
-|-----------|----------------|-------|
-| `request.method` | `method` | HTTP method (GET, POST, etc.) |
-| `request.url` | `url` | Full URL including query string |
-| `request.headers` | `headers` | Request headers (hop-by-hop headers filtered) |
-| `request.postData.text` | `body` | Request body for POST/PUT/PATCH |
-| URL path | `name` | Endpoint name for metrics |
-
-### Filtered Headers
-
-The following hop-by-hop headers are automatically removed:
-
-- Connection
-- Keep-Alive
-- Proxy-Authenticate
-- Proxy-Authorization
-- TE
-- Trailers
-- Transfer-Encoding
-- Upgrade
-
-## Merging with Config Endpoints
-
-HAR endpoints can be combined with endpoints defined in your config file:
-
-```yaml
-target: https://api.example.com
-har_file: ./recording.har
-
-# These endpoints are added to HAR endpoints
-endpoints:
-  - name: "health-check"
-    path: /health
-    weight: 1
-```
-
-The HAR endpoints are appended to any existing endpoints, giving you flexibility to mix recorded and manually-defined requests.
-
-## Security Warning
-
-⚠️ **HAR files may contain sensitive data:**
-
-- Authentication tokens and cookies
-- API keys
-- Personal data from form submissions
-
-When you load a HAR file, Crankfire displays a warning:
-
-```
-WARNING: HAR file may contain sensitive data (cookies, auth tokens). 
-Review endpoints before use in production.
-```
-
-**Best Practices:**
-
-1. Review HAR files before using them in load tests
-2. Remove or redact sensitive headers (Authorization, Cookie)
-3. Don't commit HAR files with real credentials to version control
-4. Consider using [Data Feeders](feeders.md) for parameterized auth tokens
-
-## Workflow Example
-
-### Step 1: Record Browser Session
-
-1. Open browser DevTools (F12)
-2. Go to Network tab
-3. Clear existing entries
-4. Perform the user workflow you want to test
-5. Right-click → "Save all as HAR"
-
-### Step 2: Review and Filter
-
-Check what's in your HAR file:
-
-```bash
-# Count entries
-cat recording.har | jq '.log.entries | length'
-
-# List URLs
-cat recording.har | jq '.log.entries[].request.url'
-```
-
-### Step 3: Run Load Test
-
-```bash
-crankfire \
-  --har recording.har \
-  --har-filter "host:api.example.com" \
-  --concurrency 10 \
-  --duration 1m \
-  --dashboard
-```
-
-### Step 4: Generate Report
-
-```bash
-crankfire \
-  --har recording.har \
-  --har-filter "host:api.example.com" \
-  --concurrency 10 \
-  --total 1000 \
-  --html-output har-test-report.html
-```
-
-## Limitations
-
-- **Single protocol**: HAR import only works with HTTP protocol (not WebSocket, SSE, or gRPC)
-- **Static replay**: HAR captures specific values; use [Data Feeders](feeders.md) for dynamic parameterization
-- **No response validation**: Crankfire doesn't compare responses to HAR-recorded responses
-- **Cookie state**: Cookies are included as headers but aren't managed across requests
-
-## Next Steps
-
-- Add dynamic data with [Data Feeders](feeders.md)
-- Set performance criteria with [Thresholds](thresholds.md)
-- View live metrics with [Dashboard](dashboard-reporting.md)
+- Start small (`--total 20 --log-errors`) to check that the recorded requests still succeed. Expired cookies and CSRF tokens are common causes of failure.
+- To replace a recorded token, configure an [`auth:` block](authentication.md). Its `Authorization` header overrides the recorded one.
+- Combine with [thresholds](thresholds.md) and `--html-output` to turn a recorded user journey into a regression check.
+{% endraw %}
