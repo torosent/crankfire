@@ -5,6 +5,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/torosent/crankfire/internal/variables"
 )
 
 // Result captures execution summary.
@@ -96,9 +98,12 @@ func (r *Runner) Run(ctx context.Context) Result {
 	for i := 0; i < r.opt.Concurrency; i++ {
 		go func() {
 			defer wg.Done()
+			// One variable store per worker, so a value extracted by one
+			// request is still there for this worker's next request.
+			workerCtx := variables.NewContext(runCtx, variables.NewStore())
 			for range permits {
 				if r.opt.Requester != nil {
-					err := r.opt.Requester.Do(runCtx)
+					err := r.opt.Requester.Do(workerCtx)
 					if err != nil {
 						atomic.AddInt64(&errs, 1)
 					}

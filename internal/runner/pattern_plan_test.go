@@ -17,9 +17,6 @@ func TestCompilePatternPlanRamp(t *testing.T) {
 	if plan == nil {
 		t.Fatalf("expected plan")
 	}
-	if plan.totalDuration() != 10*time.Second {
-		t.Fatalf("duration = %s", plan.totalDuration())
-	}
 	rate, ok := plan.rateAt(5 * time.Second)
 	if !ok {
 		t.Fatalf("rateAt returned false")
@@ -46,9 +43,6 @@ func TestCompilePatternPlanStepAndSpike(t *testing.T) {
 	})
 	if plan == nil {
 		t.Fatalf("expected plan")
-	}
-	if plan.maxBurst() != 500 {
-		t.Fatalf("max burst = %d", plan.maxBurst())
 	}
 	rate, ok := plan.rateAt(1500 * time.Millisecond)
 	if !ok {
@@ -77,5 +71,30 @@ func TestPlanRateAtAfterEnd(t *testing.T) {
 	}
 	if _, ok := plan.rateAt(2 * time.Second); ok {
 		t.Fatalf("expected no rate after end")
+	}
+}
+
+func TestPlanRateNeverBelowOne(t *testing.T) {
+	plan := compilePatternPlan([]LoadPattern{
+		{Type: LoadPatternTypeRamp, FromRPS: 0, ToRPS: 5, Duration: 3 * time.Second},
+		{Type: LoadPatternTypeStep, Steps: []LoadStep{{RPS: 0, Duration: time.Second}}},
+	})
+	for _, at := range []time.Duration{0, 100 * time.Millisecond, 3500 * time.Millisecond} {
+		if rate, ok := plan.rateAt(at); !ok || rate < 1 {
+			t.Fatalf("rateAt(%s) = %f, %v; a rate below 1 means unlimited to the limiter", at, rate, ok)
+		}
+	}
+}
+
+func TestCompilePatternPlanConstant(t *testing.T) {
+	plan := compilePatternPlan([]LoadPattern{{Type: LoadPatternTypeConstant, RPS: 5, Duration: 2 * time.Second}})
+	if plan == nil {
+		t.Fatalf("constant pattern was dropped")
+	}
+	if rate, ok := plan.rateAt(time.Second); !ok || rate != 5 {
+		t.Fatalf("rateAt = %f, %v", rate, ok)
+	}
+	if _, ok := plan.rateAt(3 * time.Second); ok {
+		t.Fatalf("expected the plan to end after 2s")
 	}
 }

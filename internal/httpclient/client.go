@@ -1,6 +1,7 @@
 package httpclient
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -30,12 +31,15 @@ type Feeder interface {
 }
 
 type RequestBuilder struct {
-	method       string
-	target       string
-	headers      http.Header
-	body         BodySource
-	authProvider AuthProvider
-	feeder       Feeder
+	method  string
+	target  string
+	headers http.Header
+	body    BodySource
+	// bodyHasPlaceholders is false for most bodies; those are streamed as is
+	// instead of being read into memory on every request.
+	bodyHasPlaceholders bool
+	authProvider        AuthProvider
+	feeder              Feeder
 }
 
 func NewRequestBuilder(cfg *config.Config) (*RequestBuilder, error) {
@@ -61,6 +65,10 @@ func NewRequestBuilder(cfg *config.Config) (*RequestBuilder, error) {
 	if bodySource == nil {
 		bodySource = emptyBodySource{}
 	}
+	bodyHasPlaceholders, err := hasPlaceholders(bodySource)
+	if err != nil {
+		return nil, fmt.Errorf("read body: %w", err)
+	}
 
 	headers := http.Header{}
 	for key, value := range cfg.Headers {
@@ -84,11 +92,37 @@ func NewRequestBuilder(cfg *config.Config) (*RequestBuilder, error) {
 	}
 
 	return &RequestBuilder{
-		method:  method,
-		target:  target,
-		headers: headers,
-		body:    bodySource,
+		method:              method,
+		target:              target,
+		headers:             headers,
+		body:                bodySource,
+		bodyHasPlaceholders: bodyHasPlaceholders,
 	}, nil
+}
+
+// hasPlaceholders reports whether the body contains "{{", scanning it once
+// without holding it in memory.
+func hasPlaceholders(src BodySource) (bool, error) {
+	r, err := src.NewReader()
+	if err != nil {
+		return false, err
+	}
+	defer r.Close()
+	br := bufio.NewReader(r)
+	var prev byte
+	for {
+		c, err := br.ReadByte()
+		if err == io.EOF {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if c == '{' && prev == '{' {
+			return true, nil
+		}
+		prev = c
+	}
 }
 
 // NewRequestBuilderWithAuth creates a RequestBuilder with an auth provider for automatic token injection.
@@ -153,8 +187,11 @@ func (b *RequestBuilder) Build(ctx context.Context) (*http.Request, error) {
 		return nil, err
 	}
 
+	contentLength, hasLength := b.body.ContentLength()
+	getBody := b.body.NewReader
+
 	// If feeder or store is present, apply substitution to body
-	if record != nil || store != nil {
+	if b.bodyHasPlaceholders && (record != nil || store != nil) {
 		bodyBytes, err := io.ReadAll(reader)
 		_ = reader.Close()
 		if err != nil {
@@ -162,6 +199,11 @@ func (b *RequestBuilder) Build(ctx context.Context) (*http.Request, error) {
 		}
 		bodyStr := placeholders.Apply(string(bodyBytes), record, store)
 		reader = io.NopCloser(strings.NewReader(bodyStr))
+		// The filled-in body has its own length; the template's would make the send fail.
+		contentLength, hasLength = int64(len(bodyStr)), true
+		getBody = func() (io.ReadCloser, error) {
+			return io.NopCloser(strings.NewReader(bodyStr)), nil
+		}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, b.method, target, reader)
@@ -181,13 +223,10 @@ func (b *RequestBuilder) Build(ctx context.Context) (*http.Request, error) {
 		}
 	}
 
-	if length, ok := b.body.ContentLength(); ok {
-		req.ContentLength = length
+	if hasLength {
+		req.ContentLength = contentLength
 	}
-
-	req.GetBody = func() (io.ReadCloser, error) {
-		return b.body.NewReader()
-	}
+	req.GetBody = getBody
 
 	// Inject auth header if provider is present
 	if b.authProvider != nil {

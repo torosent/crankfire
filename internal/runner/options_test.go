@@ -106,7 +106,8 @@ func TestLimiterFactory(t *testing.T) {
 	if limiter.Limit() != rate.Limit(rps) {
 		t.Errorf("Limit(%d) = %v, want %v", rps, limiter.Limit(), rate.Limit(rps))
 	}
-	if limiter.Burst() != rps {
-		t.Errorf("Burst(%d) = %d, want %d", rps, limiter.Burst(), rps)
+	// A burst of rps would send a whole extra second of requests at the start.
+	if limiter.Burst() != 1 {
+		t.Errorf("Burst(%d) = %d, want 1", rps, limiter.Burst())
 	}
 }

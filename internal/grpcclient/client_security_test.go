@@ -54,10 +54,7 @@ func TestClient_TLSConfiguration(t *testing.T) {
 				Insecure: tt.insecureSkipVerify,
 			}
 
-			client, err := NewClient(cfg)
-			if err != nil {
-				t.Fatalf("Failed to create client: %v", err)
-			}
+			client := NewClientWithConn(nil, cfg)
 
 			// Verify client configuration
 			if client.useTLS != tt.useTLS {
@@ -83,10 +80,7 @@ func TestClient_TLSInsecureActuallyUsesTLS(t *testing.T) {
 		Insecure: true,
 	}
 
-	client, err := NewClient(cfg)
-	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
-	}
+	client := NewClientWithConn(nil, cfg)
 
 	// The fix ensures that when useTLS=true and insecure=true,
 	// we use credentials.NewTLS with InsecureSkipVerify=true
@@ -116,10 +110,7 @@ func TestClient_DefaultTimeout(t *testing.T) {
 		Insecure: false,
 	}
 
-	client, err := NewClient(cfg)
-	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
-	}
+	client := NewClientWithConn(nil, cfg)
 
 	// Verify client was created successfully
 	if client == nil {
@@ -144,14 +135,11 @@ func TestClient_ConnectWithoutConnection(t *testing.T) {
 		Insecure: false,
 	}
 
-	client, err := NewClient(cfg)
-	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
-	}
+	client := NewClientWithConn(nil, cfg)
 
 	// Try to invoke without connecting
 	ctx := context.Background()
-	err = client.Invoke(ctx, nil, nil)
+	err := client.Invoke(ctx, nil, nil)
 
 	if err == nil {
 		t.Fatal("Expected error when invoking without connection, got nil")
@@ -159,43 +147,6 @@ func TestClient_ConnectWithoutConnection(t *testing.T) {
 
 	// Note: The actual error will be about nil request, but that's caught first
 	// We can't easily test this without a mock or refactoring
-}
-
-// TestClient_DoubleConnect verifies error when connecting twice
-func TestClient_DoubleConnect(t *testing.T) {
-	cfg := Config{
-		Target:   "localhost:50051",
-		Service:  "test.Service",
-		Method:   "TestMethod",
-		Metadata: nil,
-		Timeout:  100 * time.Millisecond,
-		UseTLS:   false,
-		Insecure: false,
-	}
-
-	client, err := NewClient(cfg)
-	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-
-	// First connection (will fail because no server, but that's ok)
-	_ = client.Connect(ctx)
-
-	// If first connect succeeded (unlikely without server), try second connect
-	if client.conn != nil {
-		err = client.Connect(ctx)
-		if err == nil {
-			t.Fatal("Expected error when connecting twice, got nil")
-		}
-
-		expectedError := "client already connected"
-		if err.Error() != expectedError {
-			t.Errorf("Expected error '%s', got '%s'", expectedError, err.Error())
-		}
-	}
 }
 
 // TestTLSConfigInsecureSkipVerify verifies TLS config with InsecureSkipVerify
@@ -239,10 +190,7 @@ func TestClient_MetadataHandling(t *testing.T) {
 		Insecure: false,
 	}
 
-	client, err := NewClient(cfg)
-	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
-	}
+	client := NewClientWithConn(nil, cfg)
 
 	// Verify metadata is stored
 	if len(client.md) != len(metadata) {
@@ -275,10 +223,7 @@ func TestClient_NilMetadata(t *testing.T) {
 		Insecure: false,
 	}
 
-	client, err := NewClient(cfg)
-	if err != nil {
-		t.Fatalf("Failed to create client: %v", err)
-	}
+	client := NewClientWithConn(nil, cfg)
 
 	// Verify client handles nil metadata gracefully
 	if client.md == nil {

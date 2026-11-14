@@ -5,10 +5,12 @@ import (
 	"time"
 )
 
+// shortcut: a pattern rate below 1 rps runs at 1 rps (0 used to mean "no limit"
+// and flooded the target); a real pause needs the scheduler to skip waits.
+const minPatternRate = 1.0
+
 type patternPlan struct {
 	segments []patternSegment
-	duration time.Duration
-	maxRate  float64
 }
 
 type patternSegment struct {
@@ -37,7 +39,7 @@ func compilePatternPlan(patterns []LoadPattern) *patternPlan {
 				fromRate: float64(pattern.FromRPS),
 				toRate:   float64(pattern.ToRPS),
 			}
-			plan.appendSegment(seg)
+			plan.segments = append(plan.segments, seg)
 			offset += pattern.Duration
 		case LoadPatternTypeStep:
 			for _, step := range pattern.Steps {
@@ -50,10 +52,10 @@ func compilePatternPlan(patterns []LoadPattern) *patternPlan {
 					fromRate: float64(step.RPS),
 					toRate:   float64(step.RPS),
 				}
-				plan.appendSegment(seg)
+				plan.segments = append(plan.segments, seg)
 				offset += step.Duration
 			}
-		case LoadPatternTypeSpike:
+		case LoadPatternTypeSpike, LoadPatternTypeConstant:
 			if pattern.Duration <= 0 {
 				continue
 			}
@@ -63,7 +65,7 @@ func compilePatternPlan(patterns []LoadPattern) *patternPlan {
 				fromRate: float64(pattern.RPS),
 				toRate:   float64(pattern.RPS),
 			}
-			plan.appendSegment(seg)
+			plan.segments = append(plan.segments, seg)
 			offset += pattern.Duration
 		}
 	}
@@ -71,13 +73,7 @@ func compilePatternPlan(patterns []LoadPattern) *patternPlan {
 	if len(plan.segments) == 0 {
 		return nil
 	}
-	plan.duration = offset
 	return plan
-}
-
-func (p *patternPlan) appendSegment(seg patternSegment) {
-	p.segments = append(p.segments, seg)
-	p.maxRate = math.Max(p.maxRate, math.Max(seg.fromRate, seg.toRate))
 }
 
 func (p *patternPlan) rateAt(elapsed time.Duration) (float64, bool) {
@@ -99,7 +95,7 @@ func (p *patternPlan) rateAt(elapsed time.Duration) (float64, bool) {
 			continue
 		}
 		if seg.fromRate == seg.toRate {
-			return seg.fromRate, true
+			return math.Max(seg.fromRate, minPatternRate), true
 		}
 		progress := float64(elapsed-seg.start) / float64(seg.duration)
 		if progress < 0 {
@@ -107,25 +103,7 @@ func (p *patternPlan) rateAt(elapsed time.Duration) (float64, bool) {
 		} else if progress > 1 {
 			progress = 1
 		}
-		return seg.fromRate + (seg.toRate-seg.fromRate)*progress, true
+		return math.Max(seg.fromRate+(seg.toRate-seg.fromRate)*progress, minPatternRate), true
 	}
 	return 0, false
-}
-
-func (p *patternPlan) maxBurst() int {
-	if p == nil {
-		return 0
-	}
-	burst := int(math.Ceil(p.maxRate))
-	if burst < 1 {
-		burst = 1
-	}
-	return burst
-}
-
-func (p *patternPlan) totalDuration() time.Duration {
-	if p == nil {
-		return 0
-	}
-	return p.duration
 }

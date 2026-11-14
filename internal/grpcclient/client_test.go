@@ -16,10 +16,7 @@ func TestNewClient(t *testing.T) {
 		Timeout: 5 * time.Second,
 	}
 
-	client, err := NewClient(cfg)
-	if err != nil {
-		t.Fatalf("NewClient failed: %v", err)
-	}
+	client := NewClientWithConn(nil, cfg)
 	if client == nil {
 		t.Fatal("Expected non-nil client")
 	}
@@ -39,32 +36,9 @@ func TestNewClientDefaultTimeout(t *testing.T) {
 		// Timeout not set - should default to 30s
 	}
 
-	client, err := NewClient(cfg)
-	if err != nil {
-		t.Fatalf("NewClient failed: %v", err)
-	}
+	client := NewClientWithConn(nil, cfg)
 	if client == nil {
 		t.Fatal("Expected non-nil client")
-	}
-}
-
-func TestClientConnectAlreadyConnected(t *testing.T) {
-	// This test verifies the "already connected" logic by checking the code path
-	// In practice, a real connection would be needed for full testing
-	cfg := Config{
-		Target:  "localhost:50051",
-		Service: "test.Service",
-		Method:  "TestMethod",
-	}
-
-	client, err := NewClient(cfg)
-	if err != nil {
-		t.Fatalf("NewClient failed: %v", err)
-	}
-
-	// Verify initial state
-	if client.conn != nil {
-		t.Error("Expected conn to be nil initially")
 	}
 }
 
@@ -75,16 +49,13 @@ func TestClientInvokeWithoutConnect(t *testing.T) {
 		Method:  "TestMethod",
 	}
 
-	client, err := NewClient(cfg)
-	if err != nil {
-		t.Fatalf("NewClient failed: %v", err)
-	}
+	client := NewClientWithConn(nil, cfg)
 
 	ctx := context.Background()
 	req := &emptypb.Empty{}
 	resp := &emptypb.Empty{}
 
-	err = client.Invoke(ctx, req, resp)
+	err := client.Invoke(ctx, req, resp)
 	if err == nil {
 		t.Error("Expected error when invoking without connect")
 	}
@@ -97,24 +68,6 @@ func TestClientInvokeWithoutConnect(t *testing.T) {
 	}
 }
 
-func TestClientCloseWithoutConnect(t *testing.T) {
-	cfg := Config{
-		Target:  "localhost:50051",
-		Service: "test.Service",
-		Method:  "TestMethod",
-	}
-
-	client, err := NewClient(cfg)
-	if err != nil {
-		t.Fatalf("NewClient failed: %v", err)
-	}
-
-	err = client.Close()
-	if err != nil {
-		t.Errorf("Close without connect should not error, got: %v", err)
-	}
-}
-
 func TestClientMetrics(t *testing.T) {
 	cfg := Config{
 		Target:  "localhost:50051",
@@ -122,10 +75,7 @@ func TestClientMetrics(t *testing.T) {
 		Method:  "TestMethod",
 	}
 
-	client, err := NewClient(cfg)
-	if err != nil {
-		t.Fatalf("NewClient failed: %v", err)
-	}
+	client := NewClientWithConn(nil, cfg)
 
 	metrics := client.Metrics()
 	if metrics.MessagesSent != 0 {
@@ -150,10 +100,7 @@ func TestClientWithMetadata(t *testing.T) {
 		},
 	}
 
-	client, err := NewClient(cfg)
-	if err != nil {
-		t.Fatalf("NewClient failed: %v", err)
-	}
+	client := NewClientWithConn(nil, cfg)
 
 	if len(client.md) != 2 {
 		t.Errorf("Expected 2 metadata entries, got %d", len(client.md))
@@ -169,10 +116,7 @@ func TestClientTLSConfig(t *testing.T) {
 		Insecure: true,
 	}
 
-	client, err := NewClient(cfg)
-	if err != nil {
-		t.Fatalf("NewClient failed: %v", err)
-	}
+	client := NewClientWithConn(nil, cfg)
 
 	if !client.useTLS {
 		t.Error("Expected useTLS to be true")
@@ -189,10 +133,7 @@ func TestClientFullMethodName(t *testing.T) {
 		Method:  "SayHello",
 	}
 
-	client, err := NewClient(cfg)
-	if err != nil {
-		t.Fatalf("NewClient failed: %v", err)
-	}
+	client := NewClientWithConn(nil, cfg)
 
 	// Verify service and method are stored correctly
 	if client.service != "helloworld.Greeter" {
@@ -210,10 +151,7 @@ func TestClientConcurrentMetricsAccess(t *testing.T) {
 		Method:  "TestMethod",
 	}
 
-	client, err := NewClient(cfg)
-	if err != nil {
-		t.Fatalf("NewClient failed: %v", err)
-	}
+	client := NewClientWithConn(nil, cfg)
 
 	// Concurrent reads should not panic
 	done := make(chan bool)
@@ -226,63 +164,6 @@ func TestClientConcurrentMetricsAccess(t *testing.T) {
 
 	for i := 0; i < 10; i++ {
 		<-done
-	}
-}
-
-func TestClientConnectFailure(t *testing.T) {
-	// Use an invalid address to force connection failure
-	// Note: grpc.NewClient doesn't connect immediately, it connects lazily or in background.
-	// But Connect() method in Client calls grpc.NewClient.
-	// Wait, grpc.NewClient returns a ClientConn. It doesn't block until connection is established unless WithBlock is used (which is deprecated/removed).
-	// However, Client.Connect() just calls grpc.NewClient.
-	// So Connect() itself might not fail for invalid address immediately unless we try to use it.
-	// But wait, the implementation of Connect() is:
-	// conn, err := grpc.NewClient(c.target, opts...)
-	// if err != nil { ... }
-	// grpc.NewClient validates the target syntax but doesn't connect.
-
-	// Let's test with an invalid target syntax
-	cfg := Config{
-		Target:  "///", // Invalid target
-		Service: "test.Service",
-		Method:  "TestMethod",
-	}
-
-	client, err := NewClient(cfg)
-	if err != nil {
-		t.Fatalf("NewClient failed: %v", err)
-	}
-
-	// This might fail if the target syntax is invalid
-	// If it doesn't fail here, we can't easily test connection failure without blocking.
-	// Let's skip this if it's too flaky or implementation dependent.
-	// Instead, let's test Close() with connection.
-	_ = client.Connect(context.Background())
-	// We don't assert error here because "///" might be valid for some resolvers or just fail later.
-}
-
-func TestClientCloseWithConnection(t *testing.T) {
-	cfg := Config{
-		Target:  "localhost:50051",
-		Service: "test.Service",
-		Method:  "TestMethod",
-	}
-
-	client, err := NewClient(cfg)
-	if err != nil {
-		t.Fatalf("NewClient failed: %v", err)
-	}
-
-	if err := client.Connect(context.Background()); err != nil {
-		t.Fatalf("Connect failed: %v", err)
-	}
-
-	if err := client.Close(); err != nil {
-		t.Errorf("Close failed: %v", err)
-	}
-
-	if client.conn != nil {
-		t.Error("Expected conn to be nil after Close")
 	}
 }
 

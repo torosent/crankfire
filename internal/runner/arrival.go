@@ -69,11 +69,7 @@ func (u *uniformArrival) SetRate(rps float64) {
 		return
 	}
 	u.limiter.SetLimit(rate.Limit(rps))
-	burst := int(math.Ceil(rps))
-	if burst < 1 {
-		burst = 1
-	}
-	u.limiter.SetBurst(burst)
+	u.limiter.SetBurst(max(1, int(rps/100)))
 }
 
 // poissonArrival samples exponential inter-arrival times to approximate a Poisson process.

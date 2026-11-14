@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/torosent/crankfire/internal/auth"
@@ -21,6 +22,11 @@ import (
 // The provided ctx is used to initialize the tracing provider (matching the
 // CLI behavior).
 func BuildRunner(ctx context.Context, cfg config.Config) (*runner.Runner, *metrics.Collector, func(), error) {
+	// Also needed for sessions run from the TUI, sets and the daemon.
+	if err := loadHAREndpoints(&cfg); err != nil {
+		return nil, nil, nil, err
+	}
+
 	tracingProvider, err := tracing.Init(ctx, cfg.Tracing)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("tracing init: %w", err)
@@ -74,6 +80,11 @@ func BuildRunner(ctx context.Context, cfg config.Config) (*runner.Runner, *metri
 			return
 		}
 		cleaned = true
+		// WebSocket, SSE and gRPC requesters hold connections; the daemon and
+		// the TUI would otherwise leak them on every run.
+		if c, ok := baseRequester.(io.Closer); ok {
+			c.Close()
+		}
 		if dataFeeder != nil {
 			dataFeeder.Close()
 		}
@@ -124,7 +135,7 @@ func buildRequester(
 			builder = b
 		}
 
-		selector, err := newEndpointSelector(cfg)
+		selector, err := newEndpointSelector(cfg, authProvider, dataFeeder)
 		if err != nil {
 			return nil, err
 		}

@@ -163,6 +163,9 @@ func extractHeaders(headers []*Header) map[string]string {
 		"trailers":            true,
 		"transfer-encoding":   true,
 		"upgrade":             true,
+		// Go sets these itself; a recorded value would be wrong or rejected.
+		"host":           true,
+		"content-length": true,
 	}
 
 	for _, header := range headers {
@@ -172,8 +175,9 @@ func extractHeaders(headers []*Header) map[string]string {
 
 		lowerName := strings.ToLower(header.Name)
 
-		// Skip hop-by-hop headers
-		if hopByHopHeaders[lowerName] {
+		// Skip hop-by-hop headers and HTTP/2 pseudo-headers (":authority",
+		// ":path", ...) that Chrome records and Go refuses to send.
+		if hopByHopHeaders[lowerName] || strings.HasPrefix(lowerName, ":") {
 			continue
 		}
 

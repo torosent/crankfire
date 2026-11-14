@@ -7,11 +7,13 @@ import (
 	"github.com/torosent/crankfire/internal/variables"
 )
 
+var placeholderRegex = regexp.MustCompile(`\{\{([^}|]+)(?:\|([^}]*))?\}\}`)
+
 // Apply applies placeholders with optional variable store support.
 // Supports priority: 1. Variable Store, 2. Feeder Record, 3. Default values ({{key|default}})
 func Apply(template string, record map[string]string, stores ...variables.Store) string {
-	// If no record and no store, return template as-is
-	if len(record) == 0 && len(stores) == 0 {
+	// Nothing to fill in: no placeholder, or no record and no store
+	if !strings.Contains(template, "{{") || (len(record) == 0 && len(stores) == 0) {
 		return template
 	}
 
@@ -19,7 +21,6 @@ func Apply(template string, record map[string]string, stores ...variables.Store)
 	if len(stores) > 0 && stores[0] != nil {
 		store = stores[0]
 		// Use regex-based replacement for advanced features
-		placeholderRegex := regexp.MustCompile(`\{\{([^}|]+)(?:\|([^}]*))?\}\}`)
 		return placeholderRegex.ReplaceAllStringFunc(template, func(match string) string {
 			parts := placeholderRegex.FindStringSubmatch(match)
 			if len(parts) < 2 {

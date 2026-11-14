@@ -72,12 +72,13 @@ func (w *websocketRequester) Do(ctx context.Context) error {
 		return w.helper.recordError(start, meta, "websocket", "auth", err)
 	}
 
+	// Key the pool before adding trace headers: they differ on every request
+	// and would open (and leak) a new connection each time.
+	poolKey := pool.MakePoolKey(target, wsHeaders)
+
 	if w.helper.shouldPropagate() {
 		tracing.InjectHTTPHeaders(ctx, wsHeaders)
 	}
-
-	// Get or create client from pool
-	poolKey := pool.MakePoolKey(target, wsHeaders)
 
 	factory := func() pool.Poolable {
 		wsCfg := ws.Config{
@@ -163,6 +164,10 @@ func (w *websocketRequester) Do(ctx context.Context) error {
 		}
 	}
 
+	// A read timeout breaks the connection for reading for good (gorilla keeps
+	// the error and panics after 1000 more reads), so it must not be reused.
+	readTimedOut := false
+
 	// Optionally receive messages (with timeout)
 	if opErr == nil && w.cfg.ReceiveTimeout > 0 {
 		receiveCtx, cancel := context.WithTimeout(ctx, w.cfg.ReceiveTimeout)
@@ -172,13 +177,9 @@ func (w *websocketRequester) Do(ctx context.Context) error {
 			_, err := client.ReceiveMessage(receiveCtx)
 			if err != nil {
 				// Timeout or context cancellation is expected
-				if receiveCtx.Err() != nil {
-					break
-				}
-
-				// Check for net.Error timeout (e.g. read deadline exceeded)
 				var netErr net.Error
-				if errors.As(err, &netErr) && netErr.Timeout() {
+				if receiveCtx.Err() != nil || (errors.As(err, &netErr) && netErr.Timeout()) {
+					readTimedOut = true
 					break
 				}
 
@@ -211,7 +212,11 @@ func (w *websocketRequester) Do(ctx context.Context) error {
 	}
 
 	// If successful, return client to pool
-	w.connPool.Put(poolKey, client)
+	if readTimedOut {
+		client.Close()
+	} else {
+		w.connPool.Put(poolKey, client)
+	}
 
 	w.collector.RecordRequest(latency, nil, meta)
 	return nil

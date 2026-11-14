@@ -11,11 +11,6 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// RegisterFlags registers all CLI flags to a cobra command.
-func RegisterFlags(cmd *cobra.Command) {
-	configureFlags(cmd.Flags())
-}
-
 // newFlagCommand creates a cobra command with all flags configured.
 func newFlagCommand() *cobra.Command {
 	cmd := &cobra.Command{
